@@ -1,0 +1,30 @@
+{
+  "manifestVersion": "1.0",
+  "storeListing": {
+    "distributionCountries": ["US"],
+    "locales": {
+      "en-US": {
+        "name": { "value": "Catch Me Up" },
+        "shortDescription": "Spoiler-safe recaps of any TV show, up to the episode you've reached.",
+        "fullDescription": "Back from a break and can't remember what happened? Tell Catch Me Up the show and how far you got, and get a short spoken recap of the story so far, without a single spoiler from later episodes. Ask for a recap of a whole range of seasons, or a quick \"previously on\" for the episode you're about to watch.",
+        "examplePhrases": [
+          "Alexa, ask Catch Me Up to recap Severance through season 1.",
+          "Alexa, ask Catch Me Up what happened in The Bear up to season 2 episode 4.",
+          "Alexa, ask Catch Me Up for a previously on before season 2 episode 5 of Succession."
+        ],
+        "privacyPolicyUrl": "https://TODO.example.com/privacy",
+        "termsOfUseUrl": "https://TODO.example.com/terms"
+      }
+    }
+  },
+  "integrations": [
+    {
+      "type": "MCP",
+      "config": {
+        "endpoints": {
+          "default": { "type": "HTTPS", "uri": "https://TODO.example.com/mcp" }
+        }
+      }
+    }
+  ]
+}

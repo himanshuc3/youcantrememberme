@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.env
+
+# raw third-party episode text (CC BY-SA / TMDB terms): never commit or ship
+data/cache/
+
+# alexa-ai CLI credentials live in ~/.alexa-ai, but just in case
+.alexa-ai/

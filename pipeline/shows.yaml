@@ -1,0 +1,9 @@
+# Demo shows to pre-compute. PLACEHOLDER list: swap in your own picks.
+# Mix of long-running and short shows so we can demo both partial-season and multi-season ranges.
+shows:
+  - Severance
+  - The Bear
+  - Breaking Bad
+  - Succession
+  - Stranger Things
+  - Ted Lasso
