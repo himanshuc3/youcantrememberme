@@ -57,8 +57,9 @@ Skills.
 existing API" than to "creative". Spoiler-safety by construction is our real strength,
 but to score on Quality of the Idea and Design we should add at least:
 1. **Remember where you are** per user across sessions ("I'm on season 2 episode 4",
-   then later just "catch me up"). Needs a small store and probably identity/account
-   linking, which is a real extra. Check what Alexa+ provides.
+   then later just "catch me up"). ✅ Built (`save_progress` / `catch_me_up`), working
+   for a single user or the web demo. Multi-user on a real device needs account linking:
+   see `docs/identity-and-account-linking.md`.
 2. **A visual MCP App card** (inline recap with a season/episode timeline and a spoiler
    shield). The design guide lists inline / fullscreen / voice-only display modes.
 3. **Any show on demand** (generate and cache digests in the background when asked for a

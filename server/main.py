@@ -9,27 +9,53 @@ from __future__ import annotations
 import os
 from typing import Literal
 
-from mcp.server.mcpserver import MCPServer  # mcp 2.x (was FastMCP in 1.x)
+from mcp.server.mcpserver import Context, MCPServer  # mcp 2.x (was FastMCP in 1.x)
 
+from common.progress import ProgressStore
 from common.store import ShowStore
 from server import tools
+from server.identity import resolve_user_id
 
 
-def build_server(store: ShowStore | None = None) -> MCPServer:
+def build_server(
+    store: ShowStore | None = None, progress: ProgressStore | None = None
+) -> MCPServer:
     store = store or ShowStore()
+    progress = progress or ProgressStore()
     mcp = MCPServer(
         "Catch Me Up",
         instructions=(
-            "Spoiler-safe TV recaps. Use get_recap when someone returns to a show and wants "
-            "to catch up through a given season/episode. Never reveal anything past the "
-            "requested episode."
+            "Spoiler-safe TV recaps. If the user says how far they got in a show, call "
+            "save_progress so you can remember it. When they later ask to be caught up, call "
+            "catch_me_up. Use get_recap for an explicit season/episode range. Never reveal "
+            "anything past the episode the user has reached."
         ),
     )
+
+    def user_id(ctx: Context) -> str:
+        return resolve_user_id(ctx.request_context, ctx.headers)
 
     @mcp.tool()
     def find_show(query: str) -> dict:
         """Check whether a TV show is available and list its seasons and episode counts."""
         return tools.find_show(store, query)
+
+    @mcp.tool()
+    def save_progress(show: str, season: int, episode: int, ctx: Context) -> dict:
+        """Remember how far the user has watched a show ("I'm on season 2, episode 4" means
+        they finished season 2 episode 4). Saved across conversations."""
+        return tools.save_progress(store, progress, user_id(ctx), show, season, episode)
+
+    @mcp.tool()
+    def catch_me_up(
+        ctx: Context,
+        show: str | None = None,
+        detail: Literal["brief", "standard"] = "standard",
+    ) -> dict:
+        """Spoiler-safe recap from the start through the episode the user last said they
+        watched. Omit show to use the show they most recently talked about. If no progress
+        is saved yet, it asks which episode they reached."""
+        return tools.catch_me_up(store, progress, user_id(ctx), show, detail)
 
     @mcp.tool()
     def get_recap(
@@ -40,25 +66,34 @@ def build_server(store: ShowStore | None = None) -> MCPServer:
         from_episode: int = 1,
         detail: Literal["brief", "standard"] = "standard",
     ) -> dict:
-        """Spoiler-safe spoken recap of a TV show from one point to another, e.g. to catch up
-        after a break. Only events up to to_season/to_episode are included; omit to_episode
-        to recap through the end of that season."""
+        """Spoiler-safe spoken recap of a TV show between two explicit points. Only events up
+        to to_season/to_episode are included; omit to_episode to recap through the end of
+        that season."""
         return tools.get_recap(
             store, show, to_season, to_episode, from_season, from_episode, detail
         )
 
     @mcp.tool()
-    def get_previously_on(show: str, season: int, episode: int, count: int = 2) -> dict:
-        """'Previously on...' recap of the last few episodes before the one the user is about
-        to watch (season/episode). The episode itself is not included."""
-        return tools.get_previously_on(store, show, season, episode, count)
+    def get_previously_on(
+        ctx: Context,
+        show: str | None = None,
+        season: int | None = None,
+        episode: int | None = None,
+        count: int = 2,
+    ) -> dict:
+        """'Previously on...' recap of the last few episodes. Give season and episode to recap
+        the episodes before that one; omit them to recap the last episodes the user already
+        watched, using their saved progress."""
+        return tools.get_previously_on(store, progress, user_id(ctx), show, season, episode, count)
 
     return mcp
 
 
-def build_app(store: ShowStore | None = None):
+def build_app(store: ShowStore | None = None, progress: ProgressStore | None = None):
     """ASGI app. Stateless + JSON responses suit Lambda and Alexa+'s request/response use."""
-    return build_server(store).streamable_http_app(stateless_http=True, json_response=True)
+    return build_server(store, progress).streamable_http_app(
+        stateless_http=True, json_response=True
+    )
 
 
 app = build_app()

@@ -1,11 +1,13 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "youcantrememberme"
 version = "0.1.0"
 description = "Spoiler-safe TV catch-up recaps as an Alexa+ MCP add-on"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "mcp>=2.3,<3",       # 2.x: FastMCP was renamed MCPServer

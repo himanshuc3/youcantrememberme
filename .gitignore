@@ -12,3 +12,6 @@ data/cache/
 
 # alexa-ai CLI credentials live in ~/.alexa-ai, but just in case
 .alexa-ai/
+
+# per-user watch progress (personal data)
+data/users/
