@@ -30,9 +30,15 @@ pytest
 
 python -m pipeline.run --mode baseline "Severance" "The Bear"   # fetch from TVmaze, no LLM
 python -m server.main                                           # http://127.0.0.1:8000/mcp
+
+# richer recaps with Claude on Amazon Bedrock (needs AWS credentials + model access)
+pip install -e ".[pipeline]"
+AWS_PROFILE=<profile> python -m pipeline.run --mode llm "Severance"
 ```
 
-Status and open questions: [`docs/day1-findings.md`](docs/day1-findings.md).
+Docs: [Bedrock setup](docs/bedrock.md) · [alexa-ai CLI on Pop!_OS](docs/setup-alexa-ai-cli-popos.md) ·
+[hackathon requirements](docs/hackathon-requirements.md) · [friction log](docs/friction-log.md) ·
+[status and open questions](docs/day1-findings.md).
 
 ## Attribution
 Episode data from [TVmaze](https://www.tvmaze.com) (CC BY-SA 4.0).

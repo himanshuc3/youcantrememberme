@@ -15,8 +15,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# offline digest generation (provider still to be decided: Claude API or Bedrock)
-pipeline = ["anthropic>=0.40"]
+# offline digest generation: Claude on Amazon Bedrock (AnthropicBedrockMantle client)
+pipeline = ["anthropic[bedrock]>=1.13"]
 # AWS Lambda entry point (server/handler.py)
 aws = ["mangum>=0.17"]
 # fallback demo client

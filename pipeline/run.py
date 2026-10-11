@@ -1,10 +1,12 @@
 """Pipeline CLI.
 
-    python -m pipeline.run --mode baseline "Severance" "The Bear"
-    python -m pipeline.run --mode baseline            # uses pipeline/shows.yaml
-    python -m pipeline.run --mode llm ...             # not implemented yet
+    python -m pipeline.run --mode baseline "Severance" "The Bear"   # no LLM, no AWS needed
+    python -m pipeline.run --mode llm "Severance"                   # Claude on Bedrock
+    python -m pipeline.run --mode llm                               # uses pipeline/shows.yaml
 
-Raw source text is cached under data/cache/ (git-ignored); digests land in data/shows/.
+LLM mode needs AWS credentials + Bedrock model access (see pipeline/llm.py).
+Raw source text and LLM replies are cached under data/cache/ (git-ignored), so reruns are
+free and resume where they stopped; digests land in data/shows/.
 """
 
 from __future__ import annotations
@@ -18,13 +20,14 @@ import yaml
 from common.models import ShowData
 from common.store import ShowStore
 from pipeline import digest
+from pipeline.llm import LLM, BedrockLLM, DiskCachedLLM
 from pipeline.season import build_season_digests
 from pipeline.sources import tvmaze
 
 SHOWS_YAML = Path(__file__).with_name("shows.yaml")
 
 
-def process_show(name: str, mode: str, store: ShowStore) -> ShowData:
+def process_show(name: str, mode: str, store: ShowStore, llm: LLM | None = None) -> ShowData:
     show, episodes = tvmaze.fetch_show_and_episodes(name)
     cache = store.root / "cache"
     cache.mkdir(parents=True, exist_ok=True)
@@ -40,12 +43,16 @@ def process_show(name: str, mode: str, store: ShowStore) -> ShowData:
                 ep_digests.append(d)
         season_make = digest.baseline_season_digest
     else:
-        prior = []
+        if llm is None:
+            raise ValueError("llm mode needs an LLM")
         for ep in sorted(episodes, key=lambda e: e.pos):
-            d = digest.llm_episode_digest(ep, prior)
-            ep_digests.append(d)
-            prior.append(d)
-        season_make = digest.llm_season_digest
+            # Prior digests are strictly earlier episodes: nothing later can leak in.
+            d = digest.llm_episode_digest(llm, show.name, ep, ep_digests)
+            if d:
+                ep_digests.append(d)
+
+        def season_make(season, digests):
+            return digest.llm_season_digest(llm, show.name, season, digests)
 
     data = ShowData(
         show=show,
@@ -64,8 +71,11 @@ def main() -> None:
 
     names = args.shows or yaml.safe_load(SHOWS_YAML.read_text())["shows"]
     store = ShowStore()
+    llm = None
+    if args.mode == "llm":
+        llm = DiskCachedLLM(BedrockLLM(), store.root / "cache" / "llm")
     for name in names:
-        data = process_show(name, args.mode, store)
+        data = process_show(name, args.mode, store, llm)
         print(
             f"{data.show.name}: {len(data.episodes)} episode digests, "
             f"{len(data.seasons)} season digests"
