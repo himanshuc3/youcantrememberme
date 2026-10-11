@@ -11,30 +11,28 @@ Summaries are computed **offline**; the server only looks them up, so answers ar
 
 ```
 pipeline/  TVmaze (+Wikipedia) -> per-episode digests -> per-season digests -> data/shows/*.json
-server/    MCP server (Streamable HTTP): find_show, get_recap, get_previously_on
+server/    MCP server (Streamable HTTP): find_show, save_progress, catch_me_up, get_recap, get_previously_on
 common/     shared models + storage
 evals/     spoiler-leak and speakability checks
 addon-package/  Alexa add-on listing (addon.json, images, privacy/terms)
-web-demo/  fallback client that mimics Alexa+ calling the server
+web_demo/  fallback client that mimics Alexa+ calling the server
+examples/  fictional offline demo show (no network needed)
+scripts/   run_demo.sh starts the server + web demo
 ```
 
 Spoiler safety (see `server/assemble.py`, covered by `tests/test_assemble.py`):
 an episode digest only ever sees that episode; a season digest is used only when the requested
 range covers the *whole* season; long ranges drop the *oldest* events, never the newest.
 
-## Quick start
+## Quick start (offline, no keys)
 ```bash
-python -m venv .venv && . .venv/bin/activate
-pip install -e ".[dev]"
-pytest
-
-python -m pipeline.run --mode baseline "Severance" "The Bear"   # fetch from TVmaze, no LLM
-python -m server.main                                           # http://127.0.0.1:8000/mcp
-
-# richer recaps with Claude on Amazon Bedrock (needs AWS credentials + model access)
-pip install -e ".[pipeline]"
-AWS_PROFILE=<profile> python -m pipeline.run --mode llm "Severance"
+python3 -m venv .venv && . .venv/bin/activate     # Python 3.11+
+pip install -e ".[dev,web]"
+pytest                                            # 64 tests
+scripts/run_demo.sh                               # then open http://127.0.0.1:8080
 ```
+Full instructions, a scripted walkthrough, real shows, Bedrock, tunnels:
+**[docs/testing.md](docs/testing.md)**. How it works: **[docs/how-it-works.md](docs/how-it-works.md)**.
 
 Docs: [Bedrock setup](docs/bedrock.md) · [alexa-ai CLI on Pop!_OS](docs/setup-alexa-ai-cli-popos.md) ·
 [hackathon requirements](docs/hackathon-requirements.md) · [friction log](docs/friction-log.md) ·

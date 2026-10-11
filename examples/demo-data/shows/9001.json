@@ -1,0 +1,95 @@
+{
+  "show": {
+    "id": 9001,
+    "name": "The Lighthouse Keepers",
+    "aliases": [
+      "Lighthouse Keepers",
+      "Keepers"
+    ],
+    "premiered": "2026-01-01",
+    "season_sizes": {
+      "1": 5,
+      "2": 4
+    }
+  },
+  "episodes": [
+    {
+      "season": 1,
+      "number": 1,
+      "digest": "Mara Voss arrives at the Gull Rock lighthouse to replace the keeper who vanished. The lamp still works, but the logbook has pages torn out.",
+      "title": null,
+      "title_is_spoiler": false
+    },
+    {
+      "season": 1,
+      "number": 2,
+      "digest": "A storm traps Mara and the supply boat captain, Teo Marsh, on the rock. They find the missing keeper's coat in the cellar.",
+      "title": null,
+      "title_is_spoiler": false
+    },
+    {
+      "season": 1,
+      "number": 3,
+      "digest": "A faint radio voice reads out coordinates at midnight. Teo insists the signal is impossible because the transmitter was removed years ago.",
+      "title": null,
+      "title_is_spoiler": false
+    },
+    {
+      "season": 1,
+      "number": 4,
+      "digest": "Mara and Teo follow the coordinates to a sealed tidal cave holding the missing keeper's notebook, which says the lamp must never go dark.",
+      "title": null,
+      "title_is_spoiler": false
+    },
+    {
+      "season": 1,
+      "number": 5,
+      "digest": "Mara plays an old recording and recognises the radio voice as her father, who was reported lost at sea twenty years ago. Then the lamp goes dark and the voice falls silent.",
+      "title": null,
+      "title_is_spoiler": false
+    },
+    {
+      "season": 2,
+      "number": 1,
+      "digest": "Mara refuses to leave the rock and keeps the lamp burning night and day, hoping to hear her father again. Teo brings supplies and a new radio.",
+      "title": null,
+      "title_is_spoiler": false
+    },
+    {
+      "season": 2,
+      "number": 2,
+      "digest": "A coast guard officer arrives asking about the missing keeper and the coordinates. Mara lies and says the logbook was lost.",
+      "title": null,
+      "title_is_spoiler": false
+    },
+    {
+      "season": 2,
+      "number": 3,
+      "digest": "Teo confesses that he removed the old transmitter himself, to stop her father's signal. He will not say why.",
+      "title": null,
+      "title_is_spoiler": false
+    },
+    {
+      "season": 2,
+      "number": 4,
+      "digest": "Mara finds a second cave with a working transmitter powered by the lamp. Her father answers, but the line cuts out when the coast guard boat docks.",
+      "title": null,
+      "title_is_spoiler": false
+    }
+  ],
+  "seasons": [
+    {
+      "season": 1,
+      "digest": "Mara Voss takes over the Gull Rock lighthouse after the last keeper vanishes. With boat captain Teo Marsh she follows a mysterious radio signal to a hidden cave, and learns the voice on the radio is her father, long believed dead.",
+      "episode_count": 5
+    },
+    {
+      "season": 2,
+      "digest": "Mara stays on the rock to keep the lamp burning and to reach her father. Teo confesses he silenced the old transmitter, and a coast guard officer closes in just as Mara finds a hidden transmitter that lets her speak to her father.",
+      "episode_count": 4
+    }
+  ],
+  "attribution": [
+    "Demo data: fictional, written for this project (MIT)."
+  ]
+}

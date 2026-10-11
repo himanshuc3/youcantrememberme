@@ -10,11 +10,34 @@ import os
 from typing import Literal
 
 from mcp.server.mcpserver import Context, MCPServer  # mcp 2.x (was FastMCP in 1.x)
+from mcp.server.transport_security import TransportSecuritySettings
 
 from common.progress import ProgressStore
 from common.store import ShowStore
 from server import tools
 from server.identity import resolve_user_id
+
+LOCAL_HOSTS = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+
+
+def transport_security() -> TransportSecuritySettings:
+    """DNS-rebinding protection: the SDK rejects requests whose Host header isn't allowed
+    (HTTP 421 "Invalid Host header"). Localhost is always allowed. When the server is reached
+    through a tunnel or a cloud URL, list that hostname:
+
+        ALLOWED_HOSTS=abc-123.trycloudflare.com,my-fn.lambda-url.us-east-1.on.aws
+
+    `ALLOWED_HOSTS=*` switches the check off (handy with tunnels whose hostname changes on
+    every run; avoid it for a long-lived deployment).
+    """
+    extra = [h.strip() for h in os.environ.get("ALLOWED_HOSTS", "").split(",") if h.strip()]
+    if "*" in extra:
+        return TransportSecuritySettings(enable_dns_rebinding_protection=False)
+    hosts = LOCAL_HOSTS + extra
+    return TransportSecuritySettings(
+        allowed_hosts=hosts,
+        allowed_origins=[f"{scheme}://{h}" for h in hosts for scheme in ("http", "https")],
+    )
 
 
 def build_server(
@@ -92,7 +115,7 @@ def build_server(
 def build_app(store: ShowStore | None = None, progress: ProgressStore | None = None):
     """ASGI app. Stateless + JSON responses suit Lambda and Alexa+'s request/response use."""
     return build_server(store, progress).streamable_http_app(
-        stateless_http=True, json_response=True
+        stateless_http=True, json_response=True, transport_security=transport_security()
     )
 
 

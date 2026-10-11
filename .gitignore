@@ -14,4 +14,4 @@ data/cache/
 .alexa-ai/
 
 # per-user watch progress (personal data)
-data/users/
+**/users/

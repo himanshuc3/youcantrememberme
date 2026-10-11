@@ -56,10 +56,15 @@ def find_show(store: ShowStore, query: str) -> dict[str, Any]:
     sd = resolve_show(query, store.all())
     if sd is None:
         return _unknown(store, query)
+    sizes = sorted(sd.show.season_sizes.items())
+    detail = ", ".join(f"season {s} has {n} episodes" for s, n in sizes)
     return {
         "found": True,
         "name": sd.show.name,
-        "seasons": {str(k): v for k, v in sorted(sd.show.season_sizes.items())},
+        "seasons": {str(k): v for k, v in sizes},
+        "text": f"Yes, I have {sd.show.name}: {detail}."
+        if sizes
+        else f"Yes, I have {sd.show.name}.",
     }
 
 

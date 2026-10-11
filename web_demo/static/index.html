@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Catch Me Up</title>
+  <style>
+    :root {
+      --bg: #f6f7f9; --panel: #ffffff; --ink: #1b1f24; --muted: #5b6573;
+      --line: #d9dee5; --accent: #1f6feb; --accent-ink: #ffffff; --you: #e8f0fe;
+      --ok: #137333; --warn: #8a5a00;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f1216; --panel: #181c22; --ink: #e8ebef; --muted: #98a2b0;
+        --line: #2a313a; --accent: #5b9bff; --accent-ink: #0b1220; --you: #1d2a40;
+        --ok: #6fd18c; --warn: #e3b341;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink);
+           font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 760px; margin: 0 auto; padding: 24px 16px 120px; }
+    h1 { font-size: 1.4rem; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 16px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+    .chips button { background: var(--panel); color: var(--ink); border: 1px solid var(--line);
+                    border-radius: 999px; padding: 6px 12px; cursor: pointer; font: inherit;
+                    font-size: .9rem; }
+    .chips button:hover, .chips button:focus-visible { border-color: var(--accent); }
+    #log { display: flex; flex-direction: column; gap: 12px; }
+    .msg { padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line);
+           background: var(--panel); max-width: 92%; }
+    .msg.you { align-self: flex-end; background: var(--you); }
+    .msg.bot { align-self: flex-start; }
+    .badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; }
+    .badge { font-size: .78rem; padding: 2px 8px; border-radius: 999px;
+             border: 1px solid var(--line); color: var(--muted); }
+    .badge.ok { color: var(--ok); border-color: var(--ok); }
+    .badge.warn { color: var(--warn); border-color: var(--warn); }
+    .row { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+    .row button { background: var(--accent); color: var(--accent-ink); border: 0;
+                  border-radius: 8px; padding: 6px 12px; cursor: pointer; font: inherit;
+                  font-size: .9rem; }
+    details { margin-top: 8px; color: var(--muted); font-size: .85rem; }
+    pre { overflow-x: auto; background: var(--bg); padding: 8px; border-radius: 8px;
+          border: 1px solid var(--line); margin: 6px 0 0; font-size: .8rem; }
+    form { position: fixed; left: 0; right: 0; bottom: 0; background: var(--bg);
+           border-top: 1px solid var(--line); padding: 12px 16px; }
+    .bar { max-width: 760px; margin: 0 auto; display: flex; gap: 8px; }
+    input[type=text] { flex: 1; padding: 10px 12px; border-radius: 10px; font: inherit;
+                       border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+    form button { background: var(--accent); color: var(--accent-ink); border: 0;
+                  border-radius: 10px; padding: 0 18px; font: inherit; cursor: pointer; }
+    footer { color: var(--muted); font-size: .8rem; margin-top: 24px; }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Catch Me Up</h1>
+  <p class="sub">Spoiler-safe TV recaps. This page stands in for Alexa+: each message becomes a
+    real MCP tool call to the server.</p>
+  <div class="chips" id="chips"></div>
+  <div id="log" aria-live="polite"></div>
+  <footer>
+    Episode data: <a href="https://www.tvmaze.com">TVmaze</a> (CC BY-SA 4.0) and the fictional demo
+    show. Language understanding here is a small rule-based parser; Alexa+ does its own.
+  </footer>
+</main>
+<form id="form">
+  <div class="bar">
+    <input type="text" id="text" autocomplete="off" aria-label="Say something to Catch Me Up"
+           placeholder="Try: I'm on season 1 episode 3 of The Lighthouse Keepers">
+    <button type="submit">Send</button>
+  </div>
+</form>
+<script>
+  const EXAMPLES = [
+    "Do you have The Lighthouse Keepers?",
+    "I'm on season 1 episode 3 of The Lighthouse Keepers",
+    "Catch me up",
+    "Recap The Lighthouse Keepers through season 1",
+    "Previously on",
+    "I'm on season 2 episode 2 of The Lighthouse Keepers",
+  ];
+  // One id per browser, so remembered progress is per person (sent as X-Demo-User by the server).
+  let user = "web-demo";
+  try {
+    user = localStorage.getItem("cmu-user") ||
+      (localStorage.setItem("cmu-user", "b-" + Math.random().toString(36).slice(2, 10)),
+       localStorage.getItem("cmu-user"));
+  } catch (_) { /* storage blocked: fall back to a shared id */ }
+
+  const log = document.getElementById("log");
+  const input = document.getElementById("text");
+
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+  function badge(text, cls) { return el("span", "badge " + (cls || ""), text); }
+
+  function addYou(text) { log.appendChild(el("div", "msg you", text)); }
+
+  function addBot(data) {
+    const box = el("div", "msg bot");
+    box.appendChild(el("div", "", data.spoken || "(no answer)"));
+    const r = data.result || {};
+    const badges = el("div", "badges");
+    if (data.tool) badges.appendChild(badge("tool: " + data.tool));
+    if (r.covered_through) badges.appendChild(badge("covered through " + r.covered_through, "ok"));
+    if (r.remembered_progress) badges.appendChild(badge("used remembered progress", "ok"));
+    if (r.saved) badges.appendChild(badge("progress saved", "ok"));
+    if (r.truncated) badges.appendChild(badge("older events trimmed for length", "warn"));
+    if (r.needs_progress) badges.appendChild(badge("needs your progress", "warn"));
+    if (data.error) badges.appendChild(badge("server unreachable", "warn"));
+    if (badges.children.length) box.appendChild(badges);
+
+    if (data.spoken && "speechSynthesis" in window) {
+      const row = el("div", "row");
+      const b = el("button", "", "Speak");
+      b.type = "button";
+      b.onclick = () => {
+        speechSynthesis.cancel();
+        speechSynthesis.speak(new SpeechSynthesisUtterance(data.spoken));
+      };
+      row.appendChild(b);
+      box.appendChild(row);
+    }
+    if (data.tool) {
+      const d = el("details");
+      d.appendChild(el("summary", "", "MCP call and result"));
+      d.appendChild(el("pre", "", JSON.stringify(
+        { tools_call: { name: data.tool, arguments: data.arguments }, result: data.result }, null, 2)));
+      box.appendChild(d);
+    }
+    log.appendChild(box);
+    box.scrollIntoView({ block: "end", behavior: "smooth" });
+  }
+
+  async function send(text) {
+    if (!text.trim()) return;
+    addYou(text);
+    input.value = "";
+    try {
+      const res = await fetch("/api/ask", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, user }),
+      });
+      addBot(await res.json());
+    } catch (e) {
+      addBot({ spoken: "Could not reach the demo server: " + e, error: true });
+    }
+  }
+
+  document.getElementById("form").addEventListener("submit", (e) => {
+    e.preventDefault(); send(input.value);
+  });
+  for (const ex of EXAMPLES) {
+    const b = el("button", "", ex); b.type = "button";
+    b.onclick = () => send(ex);
+    document.getElementById("chips").appendChild(b);
+  }
+</script>
+</body>
+</html>

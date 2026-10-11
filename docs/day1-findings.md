@@ -25,10 +25,10 @@
 - **Lambda + Mangum + stateless MCP** is unverified (see `server/handler.py`). Fallback:
   container on AWS App Runner.
 - **Not done**: `alexa-ai configure` (needs your Alexa developer account / browser login),
-  LLM digest generation (provider not chosen), Wikipedia source, web-demo, leak eval.
+  LLM digest generation (provider not chosen), Wikipedia source, leak eval (web demo and Bedrock summarizer have since been built; see docs/how-it-works.md).
 
-## Needs from you
-1. Devpost rules + judging criteria text (page blocks our fetcher).
-2. Run `alexa-ai configure` on your machine (needs a browser login) and confirm the category question.
-3. LLM provider for digests: Claude API key or Bedrock?
-4. Your list of demo shows (placeholder list is in `pipeline/shows.yaml`).
+## Needs from you (updated)
+1. Bedrock credentials and model access, to run the first real `--mode llm` pipeline.
+2. Run `alexa-ai configure` on your machine (browser login) and confirm the add-on category question.
+3. Decide: build real account linking (multi-user "remembers you" on a device) or keep the
+   one-user demo. See docs/identity-and-account-linking.md.

@@ -102,3 +102,11 @@ def test_identity_tiers():
     assert resolve_user_id(None, h, mode="header") == "demo:browser-123"
     assert resolve_user_id(None, FakeHeaders(), mode="header") == GUEST
     assert resolve_user_id(None, None, mode="header") == GUEST
+
+
+def test_find_show_has_spoken_text(stores):
+    shows, _ = stores
+    out = tools.find_show(shows, "the test show")
+    assert out["found"] and "The Test Show" in out["text"]
+    assert "season 1 has 3 episodes" in out["text"]
+    assert tools.find_show(shows, "Nonexistent")["found"] is False
