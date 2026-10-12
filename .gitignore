@@ -15,3 +15,6 @@ data/cache/
 
 # per-user watch progress (personal data)
 **/users/
+
+# on-demand job queue state (runtime)
+**/jobs/

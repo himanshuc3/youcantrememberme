@@ -16,6 +16,7 @@ from common.progress import ProgressStore
 from common.store import ShowStore
 from server import tools
 from server.identity import resolve_user_id
+from server.on_demand import OnDemand
 
 LOCAL_HOSTS = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
 
@@ -41,10 +42,15 @@ def transport_security() -> TransportSecuritySettings:
 
 
 def build_server(
-    store: ShowStore | None = None, progress: ProgressStore | None = None
+    store: ShowStore | None = None,
+    progress: ProgressStore | None = None,
+    on_demand: OnDemand | None = None,
 ) -> MCPServer:
     store = store or ShowStore()
     progress = progress or ProgressStore()
+    if on_demand is None and os.environ.get("ON_DEMAND") == "1":
+        # Unknown shows get queued for `python -m pipeline.worker` (see server/on_demand.py).
+        on_demand = OnDemand.from_env(store.root)
     mcp = MCPServer(
         "Catch Me Up",
         instructions=(
@@ -59,15 +65,17 @@ def build_server(
         return resolve_user_id(ctx.request_context, ctx.headers)
 
     @mcp.tool()
-    def find_show(query: str) -> dict:
+    def find_show(query: str, ctx: Context) -> dict:
         """Check whether a TV show is available and list its seasons and episode counts."""
-        return tools.find_show(store, query)
+        return tools.find_show(store, query, on_demand=on_demand, user_id=user_id(ctx))
 
     @mcp.tool()
     def save_progress(show: str, season: int, episode: int, ctx: Context) -> dict:
         """Remember how far the user has watched a show ("I'm on season 2, episode 4" means
         they finished season 2 episode 4). Saved across conversations."""
-        return tools.save_progress(store, progress, user_id(ctx), show, season, episode)
+        return tools.save_progress(
+            store, progress, user_id(ctx), show, season, episode, on_demand=on_demand
+        )
 
     @mcp.tool()
     def catch_me_up(
@@ -78,11 +86,12 @@ def build_server(
         """Spoiler-safe recap from the start through the episode the user last said they
         watched. Omit show to use the show they most recently talked about. If no progress
         is saved yet, it asks which episode they reached."""
-        return tools.catch_me_up(store, progress, user_id(ctx), show, detail)
+        return tools.catch_me_up(store, progress, user_id(ctx), show, detail, on_demand=on_demand)
 
     @mcp.tool()
     def get_recap(
         show: str,
+        ctx: Context,
         to_season: int,
         to_episode: int | None = None,
         from_season: int = 1,
@@ -93,7 +102,15 @@ def build_server(
         to to_season/to_episode are included; omit to_episode to recap through the end of
         that season."""
         return tools.get_recap(
-            store, show, to_season, to_episode, from_season, from_episode, detail
+            store,
+            show,
+            to_season,
+            to_episode,
+            from_season,
+            from_episode,
+            detail,
+            on_demand=on_demand,
+            user_id=user_id(ctx),
         )
 
     @mcp.tool()
@@ -107,14 +124,20 @@ def build_server(
         """'Previously on...' recap of the last few episodes. Give season and episode to recap
         the episodes before that one; omit them to recap the last episodes the user already
         watched, using their saved progress."""
-        return tools.get_previously_on(store, progress, user_id(ctx), show, season, episode, count)
+        return tools.get_previously_on(
+            store, progress, user_id(ctx), show, season, episode, count, on_demand=on_demand
+        )
 
     return mcp
 
 
-def build_app(store: ShowStore | None = None, progress: ProgressStore | None = None):
+def build_app(
+    store: ShowStore | None = None,
+    progress: ProgressStore | None = None,
+    on_demand: OnDemand | None = None,
+):
     """ASGI app. Stateless + JSON responses suit Lambda and Alexa+'s request/response use."""
-    return build_server(store, progress).streamable_http_app(
+    return build_server(store, progress, on_demand).streamable_http_app(
         stateless_http=True, json_response=True, transport_security=transport_security()
     )
 

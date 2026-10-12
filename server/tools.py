@@ -18,14 +18,43 @@ from common.models import ShowData, fmt_pos
 from common.progress import Progress, ProgressStore
 from common.store import ShowStore
 from server.assemble import assemble_recap, previously_on
+from server.on_demand import OnDemand
 from server.resolve import resolve_show
 
 NOT_FOUND = "I don't have recaps for that show yet. I can recap: {known}."
 
 
-def _unknown(store: ShowStore, query: str) -> dict[str, Any]:
+def _unknown(
+    store: ShowStore,
+    query: str,
+    on_demand: OnDemand | None = None,
+    user_id: str = "guest",
+) -> dict[str, Any]:
+    """Reply for a show we have no digests for. With on-demand enabled, also queues it."""
+    if on_demand is not None:
+        req = on_demand.request(user_id, query)
+        if req.kind != "unknown":
+            return _requested(req, query)
     known = ", ".join(sd.show.name for sd in store.all()) or "none yet"
     return {"found": False, "query": query, "text": NOT_FOUND.format(known=known)}
+
+
+def _requested(req, query: str = "") -> dict[str, Any]:
+    return {
+        "found": False,
+        "query": query or req.name,
+        "pending": req.kind == "pending",
+        "status": req.status,
+        "show": req.name,
+        "show_id": req.show_id,
+        "text": req.text,
+    }
+
+
+def _pending_for(on_demand: OnDemand | None, show_id: int) -> dict[str, Any] | None:
+    """If this show was requested and isn't ready, the spoken "still working on it" reply."""
+    req = on_demand.status(show_id) if on_demand is not None else None
+    return _requested(req) if req is not None else None
 
 
 def _ask_where(show_name: str | None = None) -> dict[str, Any]:
@@ -52,10 +81,16 @@ def _bad_episode(sd: ShowData, season: int, episode: int) -> str | None:
     return None
 
 
-def find_show(store: ShowStore, query: str) -> dict[str, Any]:
+def find_show(
+    store: ShowStore,
+    query: str,
+    *,
+    on_demand: OnDemand | None = None,
+    user_id: str = "guest",
+) -> dict[str, Any]:
     sd = resolve_show(query, store.all())
     if sd is None:
-        return _unknown(store, query)
+        return _unknown(store, query, on_demand, user_id)
     sizes = sorted(sd.show.season_sizes.items())
     detail = ", ".join(f"season {s} has {n} episodes" for s, n in sizes)
     return {
@@ -76,10 +111,13 @@ def get_recap(
     from_season: int = 1,
     from_episode: int = 1,
     detail: Literal["brief", "standard"] = "standard",
+    *,
+    on_demand: OnDemand | None = None,
+    user_id: str = "guest",
 ) -> dict[str, Any]:
     sd = resolve_show(show, store.all())
     if sd is None:
-        return _unknown(store, show)
+        return _unknown(store, show, on_demand, user_id)
     # No end episode means "through the end of that season".
     end = (to_season, to_episode if to_episode is not None else 10_000)
     try:
@@ -96,10 +134,23 @@ def save_progress(
     show: str,
     season: int,
     episode: int,
+    *,
+    on_demand: OnDemand | None = None,
 ) -> dict[str, Any]:
     sd = resolve_show(show, store.all())
     if sd is None:
-        return _unknown(store, show)
+        out = _unknown(store, show, on_demand, user_id)
+        if out.get("pending"):
+            # Remember the position now; the show only has to exist by the time they ask.
+            progress.set(user_id, Progress(show_id=out["show_id"], season=season, episode=episode))
+            out["saved"] = True
+            out["through"] = fmt_pos((season, episode))
+            out["text"] = (
+                f"Got it. I'll remember you're through {fmt_pos((season, episode))} of "
+                f"{out['show']}. I don't have it yet, but I've started getting it ready, "
+                "so ask me to catch you up in a few minutes."
+            )
+        return out
     if (problem := _bad_episode(sd, season, episode)) is not None:
         return {"found": True, "saved": False, "text": problem}
     progress.set(user_id, Progress(show_id=sd.show.id, season=season, episode=episode))
@@ -121,17 +172,21 @@ def catch_me_up(
     user_id: str,
     show: str | None = None,
     detail: Literal["brief", "standard"] = "standard",
+    *,
+    on_demand: OnDemand | None = None,
 ) -> dict[str, Any]:
     """Recap from the start through the episode the user last said they watched."""
     if show:
         sd = resolve_show(show, store.all())
         if sd is None:
-            return _unknown(store, show)
+            return _unknown(store, show, on_demand, user_id)
         saved = progress.get(user_id, sd.show.id)
     else:
         saved = progress.latest(user_id)
         sd = store.get(saved.show_id) if saved else None
-        if saved and sd is None:  # progress for a show we no longer have
+        if saved and sd is None:  # progress for a show that isn't ready (or is gone)
+            if (pending := _pending_for(on_demand, saved.show_id)) is not None:
+                return pending
             saved = None
     if saved is None or sd is None:
         return _ask_where(sd.show.name if sd else None)
@@ -150,17 +205,21 @@ def get_previously_on(
     season: int | None = None,
     episode: int | None = None,
     count: int = 2,
+    *,
+    on_demand: OnDemand | None = None,
 ) -> dict[str, Any]:
     """'Previously on' before an episode. With no season/episode, uses remembered progress and
     recaps the last few episodes the user has already watched."""
     if show:
         sd = resolve_show(show, store.all())
         if sd is None:
-            return _unknown(store, show)
+            return _unknown(store, show, on_demand, user_id)
     else:
         latest = progress.latest(user_id)
         sd = store.get(latest.show_id) if latest else None
         if sd is None:
+            if latest and (pending := _pending_for(on_demand, latest.show_id)) is not None:
+                return pending
             return _ask_where()
     if season is not None and episode is not None:
         before = (season, episode)  # explicit: recap the episodes before this one

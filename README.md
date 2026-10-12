@@ -28,7 +28,7 @@ range covers the *whole* season; long ranges drop the *oldest* events, never the
 ```bash
 python3 -m venv .venv && . .venv/bin/activate     # Python 3.11+
 pip install -e ".[dev]"
-pytest                                            # 64 tests
+pytest                                            # 74 tests
 scripts/run_demo.sh                               # then open http://127.0.0.1:8080
 ```
 Full instructions, a scripted walkthrough, real shows, Bedrock, tunnels:
@@ -49,6 +49,16 @@ Docs: [Bedrock setup](docs/bedrock.md) · [alexa-ai CLI on Pop!_OS](docs/setup-a
 
 Who is "the user" is decided in [`server/identity.py`](server/identity.py) (guest / demo header /
 OAuth account linking). See [docs/identity-and-account-linking.md](docs/identity-and-account-linking.md).
+
+## Shows we don't have yet (on demand)
+With `ON_DEMAND=1` the server answers an unknown show honestly, checks the name against TVmaze,
+and queues it (one job per show, daily and per-user caps). A worker fills the store:
+```bash
+ON_DEMAND=1 python -m server.main            # enqueues misses
+python -m pipeline.worker                    # --mode llm for Bedrock digests, --once to drain
+```
+Code: [`server/on_demand.py`](server/on_demand.py), [`common/jobs.py`](common/jobs.py),
+[`pipeline/worker.py`](pipeline/worker.py). Limits: `ON_DEMAND_DAILY_LIMIT` (20), `ON_DEMAND_USER_LIMIT` (3).
 
 ## License
 [MIT](LICENSE).

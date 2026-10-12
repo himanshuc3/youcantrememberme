@@ -33,6 +33,21 @@ def strip_html(text: str | None) -> str:
     return re.sub(r"\s+", " ", html.unescape(text)).strip()
 
 
+def lookup_show(query: str, timeout: float = 1.5) -> tuple[int, str] | None:
+    """Cheap existence check: (TVmaze id, canonical name), or None if there is no such show.
+
+    One request with a short timeout, because the server calls this on the request path.
+    Network errors propagate; the caller decides how to degrade.
+    """
+    with httpx.Client(headers=HEADERS, timeout=timeout) as client:
+        resp = client.get(f"{BASE}/singlesearch/shows", params={"q": query})
+    if resp.status_code == 404:
+        return None
+    resp.raise_for_status()
+    raw = resp.json()
+    return raw["id"], raw["name"]
+
+
 def fetch_show_and_episodes(query: str) -> tuple[Show, list[Episode]]:
     """Look a show up by name; returns the show plus its regular (non-special) episodes."""
     with httpx.Client(headers=HEADERS, timeout=20) as client:
