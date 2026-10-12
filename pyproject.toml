@@ -25,13 +25,16 @@ aws = ["mangum>=0.17"]
 web = ["fastapi>=0.110", "uvicorn>=0.30"]
 # icon generation for addon-package/
 assets = ["pillow>=10"]
-dev = ["pytest>=8", "ruff>=0.5"]
+# everything the test suite needs: `pip install -e ".[dev]"` is enough
+dev = ["pytest>=8", "ruff>=0.5", "fastapi>=0.110", "uvicorn>=0.30"]
 
 [tool.setuptools.packages.find]
-include = ["common*", "pipeline*", "server*", "evals*"]
+include = ["common*", "pipeline*", "server*", "evals*", "web_demo*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# so bare `pytest` (not just `python -m pytest`) can import the repo's packages
+pythonpath = ["."]
 
 [tool.ruff]
 line-length = 100

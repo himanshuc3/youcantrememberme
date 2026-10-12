@@ -24,3 +24,24 @@ def stores(tmp_path):
     shows = ShowStore(tmp_path)
     shows.save(data)
     return shows, ProgressStore(tmp_path)
+
+
+# Settings that change behaviour and could be set in a developer's shell (for the Bedrock
+# pipeline, the demo script, a tunnel...). Tests must not depend on them.
+_ENV_THAT_AFFECTS_BEHAVIOUR = [
+    "IDENTITY_MODE",
+    "ALLOWED_HOSTS",
+    "DATA_DIR",
+    "MCP_URL",
+    "BEDROCK_MODEL_ID",
+    "BEDROCK_EFFORT",
+    "AWS_REGION",
+    "AWS_DEFAULT_REGION",
+    "AWS_PROFILE",
+]
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_env(monkeypatch):
+    for name in _ENV_THAT_AFFECTS_BEHAVIOUR:
+        monkeypatch.delenv(name, raising=False)

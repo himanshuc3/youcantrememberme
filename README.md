@@ -27,7 +27,7 @@ range covers the *whole* season; long ranges drop the *oldest* events, never the
 ## Quick start (offline, no keys)
 ```bash
 python3 -m venv .venv && . .venv/bin/activate     # Python 3.11+
-pip install -e ".[dev,web]"
+pip install -e ".[dev]"
 pytest                                            # 64 tests
 scripts/run_demo.sh                               # then open http://127.0.0.1:8080
 ```

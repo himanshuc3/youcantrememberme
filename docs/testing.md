@@ -15,7 +15,7 @@ fictional demo show "The Lighthouse Keepers" in `examples/demo-data/`.
 git clone https://github.com/himanshuc3/youcantrememberme && cd youcantrememberme
 git checkout claude/stoic-cori-pkma81
 python3 -m venv .venv && . .venv/bin/activate     # or: uv venv --python 3.12 .venv
-pip install -e ".[dev,web]"
+pip install -e ".[dev]"
 ```
 
 ## 1. Automated tests (64)
