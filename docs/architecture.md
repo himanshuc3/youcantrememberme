@@ -1,6 +1,11 @@
 # Architecture and user flows
 
-Legend: **[built]** exists in the repo today, **[planned]** is a design proposal, not code.
+## 0. Simplified pipeline
+
+1. Offline ingestion pipeline: Fetch data, ingest it & summarize it (using Bedrock)
+   - Manual batch: python -m pipeline.run [--mode baseline|llm] ["Show" ...]. With no names it uses the list in pipeline/shows.yaml (Severance, The Bear etc.) [not idempotent afaik]
+   - On-demand (only if ON_DEMAND=1): Fetch using TVMaze, Limits: 20 new jobs/dat, 3/day/user
+   - Worker: python -m pipeline.worker polls data/jobs/ every 5 s (or --once to drain)
 
 ## 1. System overview
 
@@ -58,6 +63,7 @@ Progress        show_id, season, episode, updated_at   -> one JSON file per user
 ## 4. User flows
 
 ### 4.1 Pipeline run (operator) [built]
+
 ```mermaid
 sequenceDiagram
     participant Op as Operator
@@ -80,6 +86,7 @@ sequenceDiagram
 ```
 
 ### 4.2 "I'm on season 2 episode 4 of The Bear" -> save_progress [built]
+
 1. Alexa+ NLU picks `save_progress(show, season, episode)`.
 2. `resolve_user_id` -> oauth principal, else `X-Demo-User`, else `guest`.
 3. `resolve_show` normalizes and fuzzy-matches against stored shows.
@@ -87,6 +94,7 @@ sequenceDiagram
 5. `ProgressStore.set` (atomic write). Reply: "Got it. I'll remember you're through ...".
 
 ### 4.3 "Catch me up" -> catch_me_up [built]
+
 1. Show named: use that show's saved progress. No show: the most recently updated progress.
 2. No saved progress -> `needs_progress: true`, "Which season and episode did you last watch?".
 3. `assemble_recap(show, (1,1), saved.pos)` -> season digests for complete seasons, episode
@@ -94,13 +102,16 @@ sequenceDiagram
 4. Returns `text`, `covered_through`, `truncated`, `attribution`.
 
 ### 4.4 "Recap X through season 1" -> get_recap [built]
+
 Same assembly with explicit from/to. No `to_episode` means "through the end of that season".
 
 ### 4.5 "Previously on" -> get_previously_on [built]
+
 Explicit season/episode: the `count` episodes before it. Otherwise: the last `count` episodes
 up to and including saved progress. Only episode digests, never a season digest.
 
 ### 4.6 Show or episode not in the store [built; on-demand needs ON_DEMAND=1]
+
 ```mermaid
 flowchart TD
     Q[any tool call] --> R{resolve_show hit?}
@@ -116,6 +127,7 @@ flowchart TD
 ```
 
 ### 4.7 Web demo [built]
+
 Browser -> `POST /api/ask` -> `intent.parse` (regex) -> real MCP `tools/call` with
 `X-Demo-User` -> JSON result -> page shows tool call, result and spoken text.
 

@@ -1,0 +1,15 @@
+# Local infrastructure. `docker compose up -d` starts DynamoDB Local on http://localhost:8001
+# (host 8001 -> container 8000, because the MCP server itself uses :8000).
+services:
+  dynamodb:
+    image: amazon/dynamodb-local:latest
+    container_name: youcantrememberme-dynamodb
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/home/dynamodblocal/data"]
+    ports:
+      - "127.0.0.1:8001:8000"
+    user: root          # the named volume is root-owned; DynamoDB Local needs to write to it
+    volumes:
+      - dynamodb-data:/home/dynamodblocal/data
+
+volumes:
+  dynamodb-data:

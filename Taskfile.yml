@@ -1,0 +1,146 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+# `task` lists everything. Python runs through uv (https://docs.astral.sh/uv/): `uv run`
+# creates/updates .venv from pyproject.toml automatically, so there is nothing to activate.
+# Install uv once: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+version: '3'
+
+vars:
+  RUN: uv run --extra dev --extra dynamodb
+  MCP_PORT: 8000
+  WEB_PORT: 8080
+  DYNAMO_PORT: 8001
+  DEMO_DATA: examples/demo-data
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds: [task --list]
+    silent: true
+
+  # ---------------------------------------------------------------- setup
+  setup:
+    desc: Create .venv and install dependencies (dev + dynamodb extras)
+    cmds:
+      - uv sync --extra dev --extra dynamodb
+
+  # ---------------------------------------------------------------- quality
+  test:
+    desc: Run the automated test suite
+    cmds:
+      - '{{.RUN}} pytest {{.CLI_ARGS}}'
+
+  lint:
+    desc: Ruff lint + format check
+    cmds:
+      - '{{.RUN}} ruff check .'
+      - '{{.RUN}} ruff format --check .'
+
+  fmt:
+    desc: Auto-format and fix lint issues
+    cmds:
+      - '{{.RUN}} ruff check --fix .'
+      - '{{.RUN}} ruff format .'
+
+  evals:
+    desc: Run the spoiler-leak evals
+    cmds:
+      - '{{.RUN}} python -m evals.run_evals'
+
+  check:
+    desc: Everything that should pass before a commit (lint, tests, evals)
+    cmds:
+      - task: lint
+      - task: test
+      - task: evals
+
+  # ---------------------------------------------------------------- run
+  server:
+    desc: Run the MCP server on :{{.MCP_PORT}} (DATA_DIR defaults to the demo data)
+    env:
+      DATA_DIR: '{{.DEMO_DATA}}'
+      IDENTITY_MODE: header
+    cmds:
+      - '{{.RUN}} python -m server.main'
+
+  demo:
+    desc: MCP server + web demo (:{{.WEB_PORT}}) on the offline demo data
+    cmds:
+      - '{{.RUN}} scripts/run_demo.sh'
+
+  web:
+    desc: Web demo only (needs `task server` running)
+    env:
+      MCP_URL: http://127.0.0.1:{{.MCP_PORT}}/mcp
+    cmds:
+      - '{{.RUN}} uvicorn web_demo.app:app --port {{.WEB_PORT}}'
+
+  worker:
+    desc: Process queued on-demand shows once, then exit
+    cmds:
+      - '{{.RUN}} python -m pipeline.worker --once'
+
+  pipeline:
+    desc: 'Build recaps from TVmaze (no AWS). Usage: task pipeline -- "Severance" "The Bear"'
+    cmds:
+      - '{{.RUN}} python -m pipeline.run --mode baseline {{.CLI_ARGS}}'
+
+  pipeline:llm:
+    desc: 'Build recaps with Claude on Bedrock (needs AWS creds). Usage: task pipeline:llm -- "Severance"'
+    cmds:
+      - '{{.RUN}} python -m pipeline.run --mode llm {{.CLI_ARGS}}'
+
+  # ---------------------------------------------------------------- inspect
+  inspect:
+    desc: Open MCP Inspector against the local server (needs Node; server must be running)
+    cmds:
+      - npx @modelcontextprotocol/inspector
+
+  inspect:list:
+    desc: List the server's tools via the Inspector CLI (no browser)
+    cmds:
+      - >-
+        npx @modelcontextprotocol/inspector --cli http://127.0.0.1:{{.MCP_PORT}}/mcp
+        --transport http --method tools/list
+
+  mcp:list:
+    desc: List tools with plain curl (no Node needed)
+    cmds:
+      - >-
+        curl -s -H 'Content-Type: application/json'
+        -H 'Accept: application/json, text/event-stream'
+        http://127.0.0.1:{{.MCP_PORT}}/mcp
+        -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+
+  # ---------------------------------------------------------------- infra
+  db:up:
+    desc: Start DynamoDB Local in Docker (:{{.DYNAMO_PORT}}), create tables, seed demo data
+    cmds:
+      - '{{.RUN}} scripts/dynamo_local.sh'
+
+  db:down:
+    desc: Stop DynamoDB Local (keeps data)
+    cmds: [docker compose down]
+
+  db:reset:
+    desc: Stop DynamoDB Local and delete its data volume
+    prompt: This deletes the local DynamoDB data. Continue?
+    cmds: [docker compose down -v]
+
+  server:dynamo:
+    desc: Run the MCP server against DynamoDB Local (run `task db:up` first)
+    env:
+      STORAGE_BACKEND: dynamodb
+      DYNAMODB_ENDPOINT_URL: http://localhost:{{.DYNAMO_PORT}}
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+      IDENTITY_MODE: header
+    cmds:
+      - '{{.RUN}} python -m server.main'
+
+  # ---------------------------------------------------------------- expose
+  tunnel:
+    desc: 'Public HTTPS URL for Alexa+ (needs cloudflared). Then: ALLOWED_HOSTS=<host> task server'
+    cmds:
+      - cloudflared tunnel --url http://127.0.0.1:{{.MCP_PORT}}
