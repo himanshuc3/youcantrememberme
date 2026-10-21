@@ -31,6 +31,7 @@ dynamodb = ["boto3>=1.34"]
 dev = [
     "pytest>=8", "ruff>=0.5", "fastapi>=0.110", "uvicorn>=0.30",
     "moto[dynamodb]>=5", "boto3>=1.34",  # in-memory DynamoDB for tests
+    "watchfiles>=0.21",  # auto-restart server/worker in `task dev`
 ]
 
 [tool.setuptools.packages.find]

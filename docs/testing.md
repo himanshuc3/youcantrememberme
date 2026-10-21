@@ -9,7 +9,7 @@ fictional demo show "The Lighthouse Keepers" in `examples/demo-data/`.
   [`uv`](https://docs.astral.sh/uv/), which downloads a Python for you:
   `curl -LsSf https://astral.sh/uv/install.sh | sh` then `uv venv --python 3.12 .venv`.
 - `python3-venv` if you use plain venv: `sudo apt install python3-venv`.
-- Node.js is only needed for the optional MCP Inspector (section 3) and `alexa-ai`.
+- Node.js is needed for the MCP Inspector (section 3) and `alexa-ai`.
 
 ```bash
 git clone https://github.com/himanshuc3/youcantrememberme && cd youcantrememberme
@@ -33,7 +33,7 @@ What they cover:
 | `test_http_e2e.py` | real Streamable HTTP: protocol `2025-11-25`, tool list/descriptions, calls, per-user progress, Host-header protection |
 | `test_intent.py`, `test_web_demo.py` | the web demo's sentence parser and API |
 
-## 2. Try it in the web demo (the easiest way to see the whole thing)
+## 2. The web demo (for demos only; use the Inspector in section 3 for testing)
 ```bash
 scripts/run_demo.sh
 ```
@@ -67,9 +67,21 @@ curl -s $H http://127.0.0.1:8000/mcp -d '{"jsonrpc":"2.0","id":2,"method":"tools
 ```
 By default it reads `./data`. For the demo show use `DATA_DIR=examples/demo-data python -m server.main`.
 
-With Anthropic's MCP Inspector (visual tool tester; needs Node; I have not run it against this
-server): `npx @modelcontextprotocol/inspector`, choose transport **Streamable HTTP**, URL
-`http://127.0.0.1:8000/mcp`, then List Tools and call them.
+**`task dev` is the one-command setup** (DynamoDB Local + server + worker + Inspector, with
+auto-restart on code changes and on-demand fetching on). The individual tasks below do the same
+piecemeal. **The MCP Inspector is the primary way to test the server** (faster than the chat demo, and it
+shows raw tool inputs and outputs). Needs Node. With `task server` running (or `task server:dynamo`):
+```bash
+task inspect         # web UI, already connected to http://127.0.0.1:8000/mcp (Streamable HTTP);
+                     # open the URL it prints (it includes an auth token), go to Tools, call them
+task inspect:list    # tools/list from the terminal
+task inspect:call -- find_show query="The Lighthouse Keepers"
+task inspect:smoke   # scripted walkthrough of every tool, as a fresh user
+```
+The Inspector is pinned (`INSPECTOR` in the Taskfile) and sends `X-Demo-User: inspector`, so
+saved progress belongs to that user. Change it with `task inspect INSPECT_USER=alice`, or
+edit the header in the UI, to test per-user behaviour. Without Task:
+`npx @modelcontextprotocol/inspector@2.11.0 --web --transport http --server-url http://127.0.0.1:8000/mcp --header "X-Demo-User: inspector"`.
 
 ## 4. Real shows (needs internet, no keys)
 ```bash

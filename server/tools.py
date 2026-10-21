@@ -69,6 +69,23 @@ def _ask_where(show_name: str | None = None) -> dict[str, Any]:
     }
 
 
+def _refreshing(
+    sd: ShowData,
+    pos: tuple[int, int],
+    on_demand: OnDemand | None,
+    user_id: str,
+) -> dict[str, Any] | None:
+    """If `pos` is beyond the last episode we have stored (the show may have aired more since
+    it was fetched), queue a re-fetch and return the spoken "fetching" reply. None means the
+    data covers it, or a refresh wouldn't help, so the caller carries on as usual."""
+    if on_demand is None or pos <= max((e.pos for e in sd.episodes), default=(0, 0)):
+        return None
+    req = on_demand.refresh(user_id, sd.show.id, sd.show.name)
+    if req is None:
+        return None
+    return {**_requested(req), "found": True}
+
+
 def _bad_episode(sd: ShowData, season: int, episode: int) -> str | None:
     """Return a spoken error if (season, episode) doesn't exist for this show."""
     sizes = sd.show.season_sizes
@@ -118,6 +135,8 @@ def get_recap(
     sd = resolve_show(show, store.all())
     if sd is None:
         return _unknown(store, show, on_demand, user_id)
+    if (fetching := _refreshing(sd, (to_season, to_episode or 1), on_demand, user_id)) is not None:
+        return fetching
     # No end episode means "through the end of that season".
     end = (to_season, to_episode if to_episode is not None else 10_000)
     try:
@@ -151,6 +170,9 @@ def save_progress(
                 "so ask me to catch you up in a few minutes."
             )
         return out
+    if (fetching := _refreshing(sd, (season, episode), on_demand, user_id)) is not None:
+        progress.set(user_id, Progress(show_id=sd.show.id, season=season, episode=episode))
+        return {**fetching, "saved": True, "through": fmt_pos((season, episode))}
     if (problem := _bad_episode(sd, season, episode)) is not None:
         return {"found": True, "saved": False, "text": problem}
     progress.set(user_id, Progress(show_id=sd.show.id, season=season, episode=episode))
@@ -190,6 +212,8 @@ def catch_me_up(
             saved = None
     if saved is None or sd is None:
         return _ask_where(sd.show.name if sd else None)
+    if (fetching := _refreshing(sd, saved.pos, on_demand, user_id)) is not None:
+        return fetching
     try:
         recap = assemble_recap(sd, (1, 1), saved.pos, detail)
     except (ValueError, LookupError) as exc:
@@ -223,10 +247,14 @@ def get_previously_on(
             return _ask_where()
     if season is not None and episode is not None:
         before = (season, episode)  # explicit: recap the episodes before this one
+        if (fetching := _refreshing(sd, before, on_demand, user_id)) is not None:
+            return fetching
     else:
         saved = progress.get(user_id, sd.show.id)
         if saved is None:
             return _ask_where(sd.show.name)
         before = (saved.season, saved.episode + 1)  # include the last watched episode
+        if (fetching := _refreshing(sd, saved.pos, on_demand, user_id)) is not None:
+            return fetching
     recap = previously_on(sd, before, count)
     return {"found": True, **recap.model_dump()}

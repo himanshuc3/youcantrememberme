@@ -152,3 +152,48 @@ def test_over_http_the_miss_queues_a_job(env, monkeypatch):
     result = json.loads(resp.json()["result"]["content"][0]["text"])
     assert result["pending"] is True and result["show_id"] == 99
     assert [j.status for j in jobs.all()] == ["queued"]
+
+
+def test_known_show_missing_the_requested_episode_is_refreshed(env):
+    shows, _, jobs, od = env
+    shows.save(
+        ShowData(
+            show=Show(id=5, name="Old Show", season_sizes={1: 2}),
+            episodes=[
+                EpisodeDigest(season=1, number=1, digest="One."),
+                EpisodeDigest(season=1, number=2, digest="Two."),
+            ],
+        )
+    )
+    inside = tools.get_recap(shows, "Old Show", 1, 2, on_demand=od, user_id="u1")
+    assert "pending" not in inside and jobs.all() == []  # covered: no fetch
+
+    out = tools.get_recap(shows, "Old Show", 2, 1, on_demand=od, user_id="u1")
+    assert out["found"] is True and out["pending"] is True
+    assert "fetching the latest episodes" in out["text"]
+    assert [(j.show_id, j.status) for j in jobs.all()] == [(5, "queued")]
+
+    again = tools.get_recap(shows, "Old Show", 2, 1, on_demand=od, user_id="u2")
+    assert again["pending"] and "still getting" in again["text"]  # no second job
+    assert len(jobs.all()) == 1
+
+    # worker finishes without finding season 2: within the cooldown it is simply not there
+    jobs.mark_ready(jobs.claim_next())
+    after = tools.get_recap(shows, "Old Show", 2, 1, on_demand=od, user_id="u1")
+    assert "pending" not in after  # no new job; the recap says where it stops
+    assert after["covered_through"] == "season 1, episode 2"
+    assert len(jobs.all()) == 1
+
+
+def test_catch_me_up_and_save_progress_refresh_too(env):
+    shows, progress, _, od = env
+    shows.save(
+        ShowData(
+            show=Show(id=5, name="Old Show", season_sizes={1: 1}),
+            episodes=[EpisodeDigest(season=1, number=1, digest="One.")],
+        )
+    )
+    saved = tools.save_progress(shows, progress, "u1", "Old Show", 2, 3, on_demand=od)
+    assert saved["saved"] is True and saved["pending"] is True
+    out = tools.catch_me_up(shows, progress, "u1", "Old Show", on_demand=od)
+    assert out["pending"] is True and "still getting" in out["text"]

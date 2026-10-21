@@ -9,8 +9,14 @@ vars:
   RUN: uv run --extra dev --extra dynamodb
   MCP_PORT: 8000
   WEB_PORT: 8080
+  WORKER_MODE: baseline   # baseline = TVmaze blurbs, no AWS; llm = Claude on Bedrock (needs creds)
   DYNAMO_PORT: 8001
   DEMO_DATA: examples/demo-data
+  # MCP Inspector (https://github.com/modelcontextprotocol/inspector), pinned; needs Node.
+  INSPECTOR: npx -y @modelcontextprotocol/inspector@2.11.0
+  MCP_URL: http://127.0.0.1:{{.MCP_PORT}}/mcp
+  # Identity sent to the server (IDENTITY_MODE=header): each name has its own saved progress.
+  INSPECT_USER: inspector
 
 tasks:
   default:
@@ -64,14 +70,14 @@ tasks:
       - '{{.RUN}} python -m server.main'
 
   demo:
-    desc: MCP server + web demo (:{{.WEB_PORT}}) on the offline demo data
+    desc: Demo only - MCP server + chat web UI (:{{.WEB_PORT}}) on the offline demo data
     cmds:
       - '{{.RUN}} scripts/run_demo.sh'
 
   web:
-    desc: Web demo only (needs `task server` running)
+    desc: Demo-only web chat UI (use `task inspect` for testing) (needs `task server` running)
     env:
-      MCP_URL: http://127.0.0.1:{{.MCP_PORT}}/mcp
+      MCP_URL: '{{.MCP_URL}}'
     cmds:
       - '{{.RUN}} uvicorn web_demo.app:app --port {{.WEB_PORT}}'
 
@@ -92,16 +98,43 @@ tasks:
 
   # ---------------------------------------------------------------- inspect
   inspect:
-    desc: Open MCP Inspector against the local server (needs Node; server must be running)
+    desc: MCP Inspector web UI, preconnected to the local server (needs Node; `task server` running)
     cmds:
-      - npx @modelcontextprotocol/inspector
+      - >-
+        {{.INSPECTOR}} --web --transport http --server-url {{.MCP_URL}}
+        --header "X-Demo-User: {{.INSPECT_USER}}"
 
   inspect:list:
     desc: List the server's tools via the Inspector CLI (no browser)
     cmds:
       - >-
-        npx @modelcontextprotocol/inspector --cli http://127.0.0.1:{{.MCP_PORT}}/mcp
-        --transport http --method tools/list
+        {{.INSPECTOR}} --cli --transport http --server-url {{.MCP_URL}}
+        --header "X-Demo-User: {{.INSPECT_USER}}" --method tools/list
+
+  inspect:call:
+    desc: 'Call one tool. Usage: task inspect:call -- find_show query="The Lighthouse Keepers"'
+    env:
+      INSPECTOR: '{{.INSPECTOR}}'
+      MCP_URL: '{{.MCP_URL}}'
+      INSPECT_USER: '{{.INSPECT_USER}}'
+    cmds:
+      - scripts/mcp_call.sh {{.CLI_ARGS}}
+
+  inspect:smoke:
+    desc: Scripted walkthrough of every tool on the demo data (needs `task server` running)
+    vars:
+      INSPECT_USER: smoke-{{now | unixEpoch}}   # fresh user, so no leftover progress
+    env:
+      INSPECTOR: '{{.INSPECTOR}}'
+      MCP_URL: '{{.MCP_URL}}'
+      INSPECT_USER: '{{.INSPECT_USER}}'
+    cmds:
+      - scripts/mcp_call.sh find_show query="The Lighthouse Keepers"
+      - scripts/mcp_call.sh catch_me_up
+      - scripts/mcp_call.sh save_progress show="The Lighthouse Keepers" season=1 episode=3
+      - scripts/mcp_call.sh catch_me_up
+      - scripts/mcp_call.sh get_previously_on
+      - scripts/mcp_call.sh get_recap show="The Lighthouse Keepers" to_season=1 to_episode=3
 
   mcp:list:
     desc: List tools with plain curl (no Node needed)
@@ -109,7 +142,7 @@ tasks:
       - >-
         curl -s -H 'Content-Type: application/json'
         -H 'Accept: application/json, text/event-stream'
-        http://127.0.0.1:{{.MCP_PORT}}/mcp
+        {{.MCP_URL}}
         -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 
   # ---------------------------------------------------------------- infra
@@ -127,8 +160,21 @@ tasks:
     prompt: This deletes the local DynamoDB data. Continue?
     cmds: [docker compose down -v]
 
+  db:show:
+    desc: 'Look inside local DynamoDB. Usage: task db:show | task db:show -- shows | task db:show -- shows 526'
+    env:
+      STORAGE_BACKEND: dynamodb
+      DYNAMODB_ENDPOINT_URL: http://localhost:{{.DYNAMO_PORT}}
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+    cmds:
+      - '{{.RUN}} python scripts/db_show.py {{.CLI_ARGS}}'
+
   server:dynamo:
-    desc: Run the MCP server against DynamoDB Local (run `task db:up` first)
+    desc: MCP server on DynamoDB Local with on-demand fetching on (run `task db:up` first)
+    vars:
+      SERVER_CMD: '{{.SERVER_CMD | default "python -m server.main"}}'
     env:
       STORAGE_BACKEND: dynamodb
       DYNAMODB_ENDPOINT_URL: http://localhost:{{.DYNAMO_PORT}}
@@ -136,8 +182,54 @@ tasks:
       AWS_ACCESS_KEY_ID: local
       AWS_SECRET_ACCESS_KEY: local
       IDENTITY_MODE: header
+      ON_DEMAND: '1'
+      DATA_DIR: data   # only the pipeline's download/LLM caches live here with DynamoDB
     cmds:
-      - '{{.RUN}} python -m server.main'
+      - '{{.RUN}} {{.SERVER_CMD}}'
+
+  worker:dynamo:
+    desc: Worker that fills DynamoDB Local for queued shows; polls forever (WORKER_MODE=baseline|llm)
+    vars:
+      WORKER_CMD: '{{.WORKER_CMD | default (printf "python -m pipeline.worker --mode %s --poll 2" .WORKER_MODE)}}'
+    env:
+      STORAGE_BACKEND: dynamodb
+      DYNAMODB_ENDPOINT_URL: http://localhost:{{.DYNAMO_PORT}}
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+      DATA_DIR: data
+    cmds:
+      - '{{.RUN}} {{.WORKER_CMD}}'
+
+  # ---------------------------------------------------------------- dev (everything at once)
+  dev:
+    desc: DynamoDB Local + MCP server + worker + Inspector, server/worker restart on code changes
+    cmds:
+      - task: db:up
+      - task: dev:services
+
+  dev:services:
+    internal: true
+    deps: [dev:server, dev:worker, dev:inspector]
+
+  dev:server:
+    internal: true
+    cmds:
+      - task: server:dynamo
+        vars: {SERVER_CMD: 'watchfiles "python -m server.main" server common'}
+
+  dev:worker:
+    internal: true
+    cmds:
+      - task: worker:dynamo
+        vars:
+          WORKER_CMD: 'watchfiles "python -m pipeline.worker --mode {{.WORKER_MODE}} --poll 2" pipeline common'
+
+  dev:inspector:
+    internal: true
+    cmds:
+      - sleep 3   # let the server bind first
+      - task: inspect
 
   # ---------------------------------------------------------------- expose
   tunnel:

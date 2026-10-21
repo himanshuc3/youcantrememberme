@@ -31,15 +31,22 @@ Prerequisites: [`uv`](https://docs.astral.sh/uv/) (it fetches Python 3.11+ itsel
 git clone https://github.com/himanshuc3/youcantrememberme && cd youcantrememberme
 task setup          # creates .venv and installs dependencies; nothing to activate
 task test           # automated tests (no server, no Docker, no network)
-task demo           # MCP server + web demo on offline data -> http://127.0.0.1:8080
+task server         # MCP server on :8000 with the offline demo data
+task inspect        # MCP Inspector UI, preconnected to it (primary way to test the tools)
+task inspect:smoke  # or: scripted walkthrough of every tool in the terminal
+task demo           # demos only: server + chat-style web UI -> http://127.0.0.1:8080
 ```
-Against DynamoDB Local (what production uses), in separate terminals:
+Everything at once, on DynamoDB Local (what production uses), with on-demand fetching:
 ```bash
-task db:up          # DynamoDB Local in Docker on :8001, tables created, demo data seeded
-task server:dynamo  # MCP server on :8000 using DynamoDB
-task mcp:list       # prove it answers (or `task inspect` for the MCP Inspector UI)
-task web            # optional: web demo on :8080 pointed at that server
+task dev            # DynamoDB (Docker) + MCP server + worker + Inspector; Ctrl+C stops the lot
 ```
+Edit anything under `server/`, `common/` or `pipeline/` and the server/worker restart by
+themselves; the Inspector stays connected (re-run the tool call). Then in the Inspector call
+`catch_me_up` with `show` = a real show we haven't stored, e.g. "Severance": the reply says it's
+being fetched, the worker pulls it from TVmaze into DynamoDB (seconds in the default
+`baseline` mode), and asking again returns the recap. `task dev WORKER_MODE=llm` builds
+recaps with Claude on Bedrock instead (needs AWS credentials). `task db:down` / `task db:reset`
+stop or wipe the local database.
 `task` lists every task. Without Task/uv: `python3 -m venv .venv && . .venv/bin/activate &&
 pip install -e ".[dev]" && pytest && scripts/run_demo.sh`.
 Full instructions, a scripted walkthrough, real shows, Bedrock, tunnels:
