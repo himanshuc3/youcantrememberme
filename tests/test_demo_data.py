@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from common.store import ShowStore
+from common.models import ShowData
 from server.assemble import assemble_recap
 
 DEMO = Path(__file__).resolve().parent.parent / "examples" / "demo-data"
@@ -12,9 +12,9 @@ DEMO = Path(__file__).resolve().parent.parent / "examples" / "demo-data"
 
 @pytest.fixture(scope="module")
 def show():
-    shows = ShowStore(DEMO).all()
-    assert len(shows) == 1, "run `python examples/make_demo_data.py`"
-    return shows[0]
+    files = sorted((DEMO / "shows").glob("*.json"))
+    assert len(files) == 1, "run `python examples/make_demo_data.py`"
+    return ShowData.model_validate_json(files[0].read_text(encoding="utf-8"))
 
 
 def test_demo_show_shape(show):

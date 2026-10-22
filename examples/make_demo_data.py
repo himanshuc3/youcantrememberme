@@ -15,7 +15,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from common.models import EpisodeDigest, SeasonDigest, Show, ShowData
-from common.store import ShowStore
 
 EPISODES = {
     (1, 1): "Mara Voss arrives at the Gull Rock lighthouse to replace the keeper who "
@@ -74,5 +73,8 @@ def build() -> ShowData:
 
 
 if __name__ == "__main__":
-    out = ShowStore(Path(__file__).parent / "demo-data").save(build())
+    data = build()
+    out = Path(__file__).parent / "demo-data" / "shows" / f"{data.show.id}.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(data.model_dump_json(indent=2), encoding="utf-8")
     print(f"wrote {out}")

@@ -1,28 +1,22 @@
-"""Pluggable document storage behind ShowStore and JobStore.
+"""Document storage behind ShowStore and JobStore: always DynamoDB.
 
-Two tiny collections (`shows`, `jobs`), each a key -> JSON-object map, so one
-three-method interface covers every store:
-
-    STORAGE_BACKEND=file      (default) JSON files under $DATA_DIR/<collection>/<key>.json
-    STORAGE_BACKEND=dynamodb  AWS in production, DynamoDB Local in development; one table per collection
+Two tiny collections (`shows`, `jobs`), one DynamoDB table each, so one three-method interface
+covers every store. Real AWS in production, DynamoDB Local (Docker, `task db:up`) in development
+and `moto` in tests; there is no other backend and no file fallback.
 
 Settings (nothing is hardcoded; no secrets live in the repo):
-  DATA_DIR                  file backend root, and the on-disk pipeline caches (default ./data)
   DYNAMODB_TABLE_PREFIX     default "youcantrememberme-"  -> youcantrememberme-shows, ...
   DYNAMODB_ENDPOINT_URL     optional, e.g. http://localhost:8001 for DynamoDB Local
   AWS_REGION                default us-east-1 (plus the standard AWS credential chain)
+  DATA_DIR                  only the pipeline's on-disk download / LLM caches (default ./data)
 
-Documents are plain JSON (string keys), so a document is identical across backends and
-`python -m common.migrate` can copy any backend into any other. The DynamoDB driver is
-imported lazily: `pip install -e ".[dynamodb]"`.
+Documents are plain JSON (string keys). boto3 is imported lazily.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import tempfile
-from pathlib import Path
 from typing import Any, Protocol
 
 COLLECTIONS = ("shows", "jobs")
@@ -38,38 +32,6 @@ class DocStore(Protocol):
     def items(self, collection: str) -> list[tuple[str, Doc]]:
         """Every (key, document) in the collection, sorted by key."""
         ...
-
-
-class FileBackend:
-    """`<root>/<collection>/<key>.json`, written atomically (temp file + rename)."""
-
-    def __init__(self, root: str | Path):
-        self.root = Path(root)
-
-    def _dir(self, collection: str) -> Path:
-        return self.root / collection
-
-    def get(self, collection: str, key: str) -> Doc | None:
-        path = self._dir(collection) / f"{key}.json"
-        if not path.exists():
-            return None
-        return json.loads(path.read_text(encoding="utf-8"))
-
-    def put(self, collection: str, key: str, doc: Doc) -> None:
-        d = self._dir(collection)
-        d.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(doc, f, indent=2)
-        os.replace(tmp, d / f"{key}.json")
-
-    def items(self, collection: str) -> list[tuple[str, Doc]]:
-        d = self._dir(collection)
-        if not d.exists():
-            return []
-        return [
-            (p.stem, json.loads(p.read_text(encoding="utf-8"))) for p in sorted(d.glob("*.json"))
-        ]
 
 
 class DynamoBackend:
@@ -136,10 +98,5 @@ class DynamoBackend:
             table.wait_until_exists()
 
 
-def make_backend(root: str | Path | None = None, kind: str | None = None) -> DocStore:
-    kind = (kind or os.environ.get("STORAGE_BACKEND") or "file").lower()
-    if kind == "file":
-        return FileBackend(root or os.environ.get("DATA_DIR", "data"))
-    if kind == "dynamodb":
-        return DynamoBackend()
-    raise ValueError(f"unknown STORAGE_BACKEND {kind!r}; use file or dynamodb")
+def getDBConnection() -> DocStore:
+    return DynamoBackend()

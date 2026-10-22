@@ -20,6 +20,20 @@ from server.on_demand import OnDemand
 LOCAL_HOSTS = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
 
 
+# Identity of the server as shown to MCP clients; `instructions` is read by the LLM (Alexa+).
+MCP_CONFIG = {
+    "name": "Catch Me Up",
+    "title": "Catch Me Up",
+    "instructions": (
+        "Spoiler-safe TV recaps. The server remembers nothing about users: always pass "
+        "the show and the season/episode the user says they have reached. Use catch_me_up "
+        "for 'catch me up, I'm on season 2 episode 4', get_previously_on for a short "
+        "'previously on' before the episode they are about to watch, and get_recap for an "
+        "explicit range. Never reveal anything past the episode the user has reached."
+    ),
+}
+
+
 def transport_security() -> TransportSecuritySettings:
     """DNS-rebinding protection: the SDK rejects requests whose Host header isn't allowed
     (HTTP 421 "Invalid Host header"). Localhost is always allowed. When the server is reached
@@ -40,21 +54,13 @@ def transport_security() -> TransportSecuritySettings:
     )
 
 
+# Build a server using class based refactor
 def build_server(store: ShowStore | None = None, on_demand: OnDemand | None = None) -> MCPServer:
     store = store or ShowStore()
     if on_demand is None and os.environ.get("ON_DEMAND") == "1":
         # Unknown shows get queued for `python -m pipeline.worker` (see server/on_demand.py).
-        on_demand = OnDemand.from_env(store.root)
-    mcp = MCPServer(
-        "Catch Me Up",
-        instructions=(
-            "Spoiler-safe TV recaps. The server remembers nothing about users: always pass "
-            "the show and the season/episode the user says they have reached. Use catch_me_up "
-            "for 'catch me up, I'm on season 2 episode 4', get_previously_on for a short "
-            "'previously on' before the episode they are about to watch, and get_recap for an "
-            "explicit range. Never reveal anything past the episode the user has reached."
-        ),
-    )
+        on_demand = OnDemand.from_env(store.root, backend=store.backend)
+    mcp = MCPServer(**MCP_CONFIG)
 
     @mcp.tool()
     def find_show(query: str) -> dict:

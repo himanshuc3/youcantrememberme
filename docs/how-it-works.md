@@ -24,7 +24,7 @@ ask, the server only looks up and stitches together summaries it already has.
            ▼                                          ├─ resolve    fuzzy show name
    pipeline/season  one digest per finished season    └─ assemble   stitch digests, never
            ▼                                                         past that episode
-   data/shows/<id>.json  ───────────────────────────────►  reads digests
+   DynamoDB `shows` table  ─────────────────────────────►  reads digests
                                                               │
                                                               ▼
                                                     spoken text back to Alexa+ → the person
@@ -72,9 +72,9 @@ user said.
 |---|---|
 | `server/` | the MCP server Alexa+ calls (tools, assembly) |
 | `common/` | data models and storage shared by pipeline and server |
-| `pipeline/` | offline: fetch, summarize with Bedrock, write `data/` |
+| `pipeline/` | offline: fetch, summarize with Bedrock, write to DynamoDB |
 | `web_demo/` | stand-in for Alexa+: a chat page + a rule-based sentence parser |
-| `examples/` | the fictional offline demo show |
+| `examples/` | the fictional demo show (JSON fixture) |
 | `evals/` | spoiler-leak and quality checks (stubs, still to build) |
 | `addon-package/` | the Alexa+ store listing (draft) |
 

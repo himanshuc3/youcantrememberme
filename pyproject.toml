@@ -14,6 +14,7 @@ dependencies = [
     "pydantic>=2.7",
     "httpx>=0.27",
     "pyyaml>=6",
+    "boto3>=1.34",       # DynamoDB: the only storage backend (see common/backend.py)
 ]
 
 [project.optional-dependencies]
@@ -25,12 +26,10 @@ aws = ["mangum>=0.17"]
 web = ["fastapi>=0.110", "uvicorn>=0.30"]
 # icon generation for addon-package/
 assets = ["pillow>=10"]
-# storage backend (STORAGE_BACKEND=dynamodb: DynamoDB Local in dev, AWS in production; see common/backend.py)
-dynamodb = ["boto3>=1.34"]
 # everything the test suite needs: `pip install -e ".[dev]"` is enough
 dev = [
     "pytest>=8", "ruff>=0.5", "fastapi>=0.110", "uvicorn>=0.30",
-    "moto[dynamodb]>=5", "boto3>=1.34",  # in-memory DynamoDB for tests
+    "moto[dynamodb]>=5",  # in-memory DynamoDB for tests
     "watchfiles>=0.21",  # auto-restart server/worker in `task dev`
 ]
 

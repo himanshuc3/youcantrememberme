@@ -1,7 +1,9 @@
 # How to run and test it
 
-Everything in sections 1–4 works **offline, with no accounts or API keys**, using the
-fictional demo show "The Lighthouse Keepers" in `examples/demo-data/`.
+Storage is always DynamoDB. Sections 2–3 need Docker for DynamoDB Local (`task db:up`, which
+`task dev` and `task demo` run for you) but **no accounts or API keys**; they use the fictional
+demo show "The Lighthouse Keepers" (`examples/demo-data/`, loaded into DynamoDB by `db:up`).
+The automated tests (section 1) use in-memory DynamoDB (`moto`) and need no Docker.
 
 ## 0. Prerequisites (Pop!_OS)
 - **Python 3.11 or newer.** Check with `python3 --version`. Pop!_OS 22.04 ships 3.10, which
@@ -9,13 +11,12 @@ fictional demo show "The Lighthouse Keepers" in `examples/demo-data/`.
   [`uv`](https://docs.astral.sh/uv/), which downloads a Python for you:
   `curl -LsSf https://astral.sh/uv/install.sh | sh` then `uv venv --python 3.12 .venv`.
 - `python3-venv` if you use plain venv: `sudo apt install python3-venv`.
-- Node.js is needed for the MCP Inspector (section 3) and `alexa-ai`.
+- Docker (DynamoDB Local) and Node.js (the MCP Inspector, section 3, and `alexa-ai`).
 
 ```bash
 git clone https://github.com/himanshuc3/youcantrememberme && cd youcantrememberme
 git checkout claude/stoic-cori-pkma81
-python3 -m venv .venv && . .venv/bin/activate     # or: uv venv --python 3.12 .venv
-pip install -e ".[dev]"
+task setup                                        # or: python3 -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"
 ```
 
 ## 1. Automated tests (64)
@@ -54,7 +55,7 @@ The page's language understanding is a small rule-based parser (`web_demo/intent
 understands the phrasings above, not free speech. On a real device Alexa+ does that part.
 
 ## 3. Test the MCP server directly (what Alexa+ talks to)
-Start only the server: `python -m server.main` (port 8000).
+Start DynamoDB Local and the server: `task db:up` then `task server` (port 8000).
 
 With curl:
 ```bash
@@ -62,27 +63,29 @@ H='-H Content-Type:application/json -H Accept:application/json,text/event-stream
 curl -s $H http://127.0.0.1:8000/mcp -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 curl -s $H http://127.0.0.1:8000/mcp -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_recap","arguments":{"show":"lighthouse keepers","to_season":1,"to_episode":3}}}'
 ```
-By default it reads `./data`. For the demo show use `DATA_DIR=examples/demo-data python -m server.main`.
+The demo show is loaded by `task db:up`.
 
 **`task dev` is the one-command setup** (DynamoDB Local + server + worker + Inspector, with
 auto-restart on code changes and on-demand fetching on). The individual tasks below do the same
 piecemeal. **The MCP Inspector is the primary way to test the server** (faster than the chat demo, and it
-shows raw tool inputs and outputs). Needs Node. With `task server` running (or `task server:dynamo`):
+shows raw tool inputs and outputs). Needs Node. With `task server` running:
 ```bash
 task inspect         # web UI, already connected to http://127.0.0.1:8000/mcp (Streamable HTTP);
                      # open the URL it prints (it includes an auth token), go to Tools, call them
 task inspect:list    # tools/list from the terminal
 task inspect:call -- find_show query="The Lighthouse Keepers"
-task inspect:smoke   # scripted walkthrough of every tool, as a fresh user
+task inspect:smoke   # scripted walkthrough of every tool
 ```
 The Inspector is pinned (`INSPECTOR` in the Taskfile). The tools are stateless, so fill in
 show, season and episode on every call. Without Task:
 `npx @modelcontextprotocol/inspector@2.11.0 --web --transport http --server-url http://127.0.0.1:8000/mcp`.
 
 ## 4. Real shows (needs internet, no keys)
+Easiest: with `task dev` running, ask the Inspector for a show that isn't stored; the worker
+builds it. Or batch-build:
 ```bash
-python -m pipeline.run --mode baseline "Severance" "The Bear"   # TVmaze blurbs → data/
-DATA_DIR=data scripts/run_demo.sh
+task pipeline -- "Severance" "The Bear"     # TVmaze blurbs → DynamoDB (needs `task db:up`)
+task db:show -- shows                       # confirm they are stored
 ```
 Baseline recaps are just TVmaze's one-line blurbs. Good enough to see it work, thin as a
 product.
@@ -91,7 +94,7 @@ product.
 See [bedrock.md](bedrock.md). Short version:
 ```bash
 pip install -e ".[pipeline]"
-AWS_PROFILE=<profile> python -m pipeline.run --mode llm "Severance"
+AWS_PROFILE=<profile> task pipeline:llm -- "Severance"
 ```
 This is the one path that has **not** been run for real yet (no AWS credentials in my
 sandbox; tests use a fake model). Expect to debug an access or parameter issue on first run.
@@ -118,4 +121,4 @@ Follow [setup-alexa-ai-cli-popos.md](setup-alexa-ai-cli-popos.md), then
 | `requires a different Python` on install | need Python ≥ 3.11 (see section 0) |
 | `421 Invalid Host header` | set `ALLOWED_HOSTS` to the hostname you are using |
 | Web demo says "couldn't reach the MCP server" | the server isn't running on `MCP_URL` (default `http://127.0.0.1:8000/mcp`) |
-| "I don't have recaps for that show yet" | that show isn't in `DATA_DIR`; run the pipeline or use the demo data |
+| "I don't have recaps for that show yet" | that show isn't in DynamoDB; ask for it with on-demand on (`task dev`), run `task pipeline`, or `task db:up` for the demo show |

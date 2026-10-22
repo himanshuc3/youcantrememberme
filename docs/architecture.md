@@ -4,8 +4,8 @@
 
 1. Offline ingestion pipeline: Fetch data, ingest it & summarize it (using Bedrock)
    - Manual batch: python -m pipeline.run [--mode baseline|llm] ["Show" ...]. With no names it uses the list in pipeline/shows.yaml (Severance, The Bear etc.) [not idempotent afaik]
-   - On-demand (only if ON_DEMAND=1): Fetch using TVMaze, Limits: 20 new jobs/dat, 3/day/user
-   - Worker: python -m pipeline.worker polls data/jobs/ every 5 s (or --once to drain)
+   - On-demand (only if ON_DEMAND=1): Fetch using TVMaze, Limit: 20 new jobs/day
+   - Worker: python -m pipeline.worker polls the DynamoDB `jobs` table every 2 s under `task worker` (5 s default; `--once` drains and exits)
 
 ## 1. System overview
 
@@ -19,7 +19,7 @@ flowchart LR
         EP --> DG[digest.py<br/>baseline or LLM]
         DG <--> LLM[llm.py<br/>BedrockLLM + DiskCachedLLM]
         DG --> SE[season.py<br/>complete seasons only]
-        SE --> SD[(ShowStore<br/>data/shows/ID.json)]
+        SE --> SD[(ShowStore<br/>DynamoDB shows table)]
         DG --> SD
     end
 
@@ -46,7 +46,7 @@ Show            id, name, aliases, season_sizes{season: n_episodes}
 Episode         raw TVmaze/Wikipedia text   (pipeline-internal, never served)
 EpisodeDigest   season, number, digest, title, title_is_spoiler
 SeasonDigest    season, digest, episode_count   (only built when season is complete)
-ShowData        show + [EpisodeDigest] + [SeasonDigest] + attribution   -> one JSON file per show
+ShowData        show + [EpisodeDigest] + [SeasonDigest] + attribution   -> one DynamoDB item per show
 Recap           show, text, starts_at, covered_through, truncated, attribution
 ```
 

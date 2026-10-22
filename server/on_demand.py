@@ -67,13 +67,13 @@ class OnDemand:
         self.refresh_cooldown = refresh_cooldown
 
     @classmethod
-    def from_env(cls, root=None, lookup: Lookup | None = None) -> OnDemand:
+    def from_env(cls, root=None, lookup: Lookup | None = None, backend=None) -> OnDemand:
         if lookup is None:
             from pipeline.sources.tvmaze import lookup_show
 
             lookup = lookup_show
         return cls(
-            JobStore(root),
+            JobStore(root, backend),
             lookup,
             daily_limit=int(os.environ.get("ON_DEMAND_DAILY_LIMIT", "20")),
             refresh_cooldown=timedelta(hours=float(os.environ.get("REFRESH_COOLDOWN_HOURS", "24"))),

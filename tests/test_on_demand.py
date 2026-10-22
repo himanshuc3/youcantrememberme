@@ -16,7 +16,7 @@ def fake_lookup(query):
 
 @pytest.fixture
 def env(shows):
-    jobs = JobStore(shows.root)
+    jobs = JobStore(shows.root, shows.backend)
     od = OnDemand(jobs, fake_lookup, daily_limit=2)
     return shows, jobs, od
 

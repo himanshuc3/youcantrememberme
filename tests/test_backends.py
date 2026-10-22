@@ -1,17 +1,9 @@
-"""The same store behaviour must hold on every backend (file, DynamoDB).
+"""Storage behaviour on DynamoDB (in memory via moto, so no server is needed)."""
 
-DynamoDB is exercised through moto, so no server is needed.
-"""
-
-import pytest
-
-from common.backend import DynamoBackend, FileBackend, make_backend
+from common.backend import DynamoBackend, getDBConnection
 from common.jobs import JobStore
-from common.migrate import migrate
 from common.models import EpisodeDigest, SeasonDigest, Show, ShowData
 from common.store import ShowStore
-
-moto = pytest.importorskip("moto")
 
 
 def _show() -> ShowData:
@@ -22,41 +14,26 @@ def _show() -> ShowData:
     )
 
 
-@pytest.fixture(params=["file", "dynamodb"])
-def backend(request, tmp_path, monkeypatch):
-    if request.param == "file":
-        yield FileBackend(tmp_path)
-    else:
-        monkeypatch.setenv("AWS_ACCESS_KEY_ID", "test")
-        monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "test")
-        with moto.mock_aws():
-            import boto3
-
-            be = DynamoBackend(resource=boto3.resource("dynamodb", region_name="us-east-1"))
-            be.ensure_tables()
-            yield be
+def test_documents_round_trip(dynamo):
+    assert dynamo.get("shows", "1") is None
+    dynamo.put("shows", "1", {"a": 1})
+    dynamo.put("shows", "1", {"a": 2})  # put replaces
+    dynamo.put("shows", "2", {"b": {"1": "x"}})
+    assert dynamo.get("shows", "1") == {"a": 2}
+    assert dynamo.items("shows") == [("1", {"a": 2}), ("2", {"b": {"1": "x"}})]
+    assert dynamo.items("jobs") == []
 
 
-def test_documents_round_trip(backend):
-    assert backend.get("shows", "1") is None
-    backend.put("shows", "1", {"a": 1})
-    backend.put("shows", "1", {"a": 2})  # put replaces
-    backend.put("shows", "2", {"b": {"1": "x"}})
-    assert backend.get("shows", "1") == {"a": 2}
-    assert backend.items("shows") == [("1", {"a": 2}), ("2", {"b": {"1": "x"}})]
-    assert backend.items("jobs") == []
-
-
-def test_show_store(backend, tmp_path):
-    shows = ShowStore(tmp_path, backend=backend)
+def test_show_store(dynamo, tmp_path):
+    shows = ShowStore(tmp_path, backend=dynamo)
     assert shows.get(7) is None and shows.all() == []
     shows.save(_show())
     assert shows.get(7) == _show()  # int season keys survive the JSON round trip
     assert [d.show.id for d in shows.all()] == [7]
 
 
-def test_job_store_lifecycle(backend, tmp_path):
-    jobs = JobStore(tmp_path, backend=backend)
+def test_job_store_lifecycle(dynamo, tmp_path):
+    jobs = JobStore(tmp_path, dynamo)
     job, created = jobs.enqueue(7, "The Test Show")
     assert created and job.status == "queued"
     assert jobs.enqueue(7, "The Test Show")[1] is False  # deduped
@@ -67,18 +44,12 @@ def test_job_store_lifecycle(backend, tmp_path):
     assert jobs.created_today() == 1
 
 
-def test_migrate_file_to_other_backend(backend, tmp_path):
-    src = FileBackend(tmp_path / "src")
-    ShowStore(backend=src, root=tmp_path / "src").save(_show())
-    JobStore(backend=src, root=tmp_path / "src").enqueue(7, "The Test Show")
-    counts = migrate(src, backend)
-    assert counts == {"shows": 1, "jobs": 1}
-    assert ShowStore(tmp_path, backend=backend).get(7) == _show()
-    assert JobStore(tmp_path, backend=backend).get(7).name == "The Test Show"
+def test_table_names_use_the_prefix(dynamo):
+    assert dynamo.table_name("shows") == "youcantrememberme-shows"
+    assert DynamoBackend(prefix="x-", resource=dynamo.resource).table_name("jobs") == "x-jobs"
 
 
-def test_make_backend_selection(monkeypatch, tmp_path):
-    assert isinstance(make_backend(tmp_path), FileBackend)
-    monkeypatch.setenv("STORAGE_BACKEND", "bogus")
-    with pytest.raises(ValueError):
-        make_backend(tmp_path)
+def test_make_backend_is_always_dynamodb(monkeypatch):
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "test")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "test")
+    assert isinstance(getDBConnection(), DynamoBackend)

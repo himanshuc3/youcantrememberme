@@ -1,12 +1,27 @@
 import pytest
 
+from common.backend import DynamoBackend
 from common.models import EpisodeDigest, SeasonDigest, Show, ShowData
 from common.store import ShowStore
 
 
 @pytest.fixture
-def shows(tmp_path):
-    """A ShowStore holding one 2-season show ("The Test Show")."""
+def dynamo(monkeypatch):
+    """Empty DynamoDB tables, in memory (moto): no Docker, no network, nothing to clean up."""
+    moto = pytest.importorskip("moto")
+    import boto3
+
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "test")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "test")
+    with moto.mock_aws():
+        backend = DynamoBackend(resource=boto3.resource("dynamodb", region_name="us-east-1"))
+        backend.ensure_tables()
+        yield backend
+
+
+@pytest.fixture
+def shows(tmp_path, dynamo):
+    """A ShowStore (in-memory DynamoDB) holding one 2-season show ("The Test Show")."""
     sizes = {1: 3, 2: 3}
     data = ShowData(
         show=Show(id=7, name="The Test Show", season_sizes=sizes),
@@ -20,7 +35,7 @@ def shows(tmp_path):
             for s, size in sizes.items()
         ],
     )
-    store = ShowStore(tmp_path)
+    store = ShowStore(tmp_path, backend=dynamo)
     store.save(data)
     return store
 
@@ -30,7 +45,6 @@ def shows(tmp_path):
 _ENV_THAT_AFFECTS_BEHAVIOUR = [
     "ALLOWED_HOSTS",
     "DATA_DIR",
-    "STORAGE_BACKEND",
     "DYNAMODB_TABLE_PREFIX",
     "DYNAMODB_ENDPOINT_URL",
     "MCP_URL",

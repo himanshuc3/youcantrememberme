@@ -1,10 +1,10 @@
 """On-demand show jobs: "someone asked for a show we don't have yet".
 
-One document per TVmaze show id in the configured backend (common/backend.py), so a show can
+One document per TVmaze show id in DynamoDB (common/backend.py), so a show can
 only ever have one job (that is the dedupe). The server enqueues; `pipeline.worker` claims and runs them.
 
-`enqueue` and `claim_next` are read-then-write, so they assume ONE worker process whichever
-backend is used. On AWS the next step is DynamoDB conditional writes plus SQS.
+`enqueue` and `claim_next` are read-then-write, so they assume ONE worker process.
+On AWS the next step is DynamoDB conditional writes plus SQS.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from common.backend import DocStore, make_backend
+from common.backend import DocStore, getDBConnection
 
 COLLECTION = "jobs"
 
@@ -47,7 +47,7 @@ class Job(BaseModel):
 class JobStore:
     def __init__(self, root: str | Path | None = None, backend: DocStore | None = None):
         self.root = Path(root or os.environ.get("DATA_DIR", "data"))
-        self.backend = backend or make_backend(self.root)
+        self.backend = backend or getDBConnection()
 
     def _write(self, job: Job) -> None:
         job.updated_at = _now()

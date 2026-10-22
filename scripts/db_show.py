@@ -1,4 +1,5 @@
-"""Look inside the local DynamoDB (or whatever STORAGE_BACKEND points at).
+"""Look inside DynamoDB (DynamoDB Local via DYNAMODB_ENDPOINT_URL, or real AWS).
+
 
 python scripts/db_show.py                # every collection: how many documents
 python scripts/db_show.py shows          # keys + a one-line summary of each document
@@ -10,7 +11,7 @@ from __future__ import annotations
 import json
 import sys
 
-from common.backend import COLLECTIONS, make_backend
+from common.backend import COLLECTIONS, getDBConnection
 
 
 def summary(collection: str, doc: dict) -> str:
@@ -25,7 +26,7 @@ def summary(collection: str, doc: dict) -> str:
 
 
 def main() -> None:
-    backend = make_backend()
+    backend = getDBConnection()
     if len(sys.argv) == 1:
         for c in COLLECTIONS:
             print(f"{c}: {len(backend.items(c))} documents")

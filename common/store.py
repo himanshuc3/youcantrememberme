@@ -1,11 +1,10 @@
 """Digest storage.
 
-One document per show, keyed by TVmaze id, in the configured backend (JSON files locally by
-default, DynamoDB in production and against DynamoDB Local: see common/backend.py). The server
-only ever reads, the pipeline only ever writes.
+One document per show, keyed by TVmaze id, in DynamoDB (see common/backend.py). The server only ever
+reads, the pipeline only ever writes.
 
-`root` is `$DATA_DIR`: the file backend's location and where the pipeline keeps its raw-text
-and LLM caches (those always stay on local disk, whichever backend holds the digests).
+`root` is `$DATA_DIR`: where the pipeline keeps its raw-text and LLM caches. Those are plain
+files on local disk; the digests themselves are never stored as files.
 """
 
 from __future__ import annotations
@@ -14,7 +13,7 @@ import json
 import os
 from pathlib import Path
 
-from common.backend import DocStore, make_backend
+from common.backend import DocStore, getDBConnection
 from common.models import ShowData
 
 COLLECTION = "shows"
@@ -23,7 +22,7 @@ COLLECTION = "shows"
 class ShowStore:
     def __init__(self, root: str | Path | None = None, backend: DocStore | None = None):
         self.root = Path(root or os.environ.get("DATA_DIR", "data"))
-        self.backend = backend or make_backend(self.root)
+        self.backend = backend or getDBConnection()
 
     def save(self, data: ShowData) -> str:
         key = str(data.show.id)

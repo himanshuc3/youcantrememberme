@@ -10,13 +10,13 @@ Summaries are computed **offline**; the server only looks them up, so answers ar
 (Alexa+ requires < 500 ms).
 
 ```
-pipeline/  TVmaze (+Wikipedia) -> per-episode digests -> per-season digests -> data/shows/*.json
+pipeline/  TVmaze (+Wikipedia) -> per-episode digests -> per-season digests -> DynamoDB (shows table)
 server/    MCP server (Streamable HTTP): find_show, catch_me_up, get_recap, get_previously_on
 common/     shared models + storage
 evals/     spoiler-leak and speakability checks
 addon-package/  Alexa add-on listing (addon.json, images, privacy/terms)
 web_demo/  fallback client that mimics Alexa+ calling the server
-examples/  fictional offline demo show (no network needed)
+examples/  fictional demo show (JSON fixture, loaded into DynamoDB by `task db:up`)
 scripts/   run_demo.sh starts the server + web demo
 ```
 
@@ -25,32 +25,31 @@ an episode digest only ever sees that episode; a season digest is used only when
 range covers the *whole* season; long ranges drop the *oldest* events, never the newest.
 
 ## Quick start (fresh clone)
-Prerequisites: [`uv`](https://docs.astral.sh/uv/) (it fetches Python 3.11+ itself) and
-[`task`](https://taskfile.dev). Docker is only needed for the DynamoDB Local steps.
+Prerequisites: [`uv`](https://docs.astral.sh/uv/) (it fetches Python 3.11+ itself),
+[`task`](https://taskfile.dev), Docker (DynamoDB Local) and Node (the MCP Inspector).
 ```bash
 git clone https://github.com/himanshuc3/youcantrememberme && cd youcantrememberme
 task setup          # creates .venv and installs dependencies; nothing to activate
-task test           # automated tests (no server, no Docker, no network)
-task server         # MCP server on :8000 with the offline demo data
-task inspect        # MCP Inspector UI, preconnected to it (primary way to test the tools)
-task inspect:smoke  # or: scripted walkthrough of every tool in the terminal
-task demo           # demos only: server + chat-style web UI -> http://127.0.0.1:8080
+task test           # automated tests: in-memory DynamoDB, so no Docker or network needed
+task dev            # DynamoDB Local (Docker) + MCP server + worker + Inspector; Ctrl+C stops it all
 ```
-Everything at once, on DynamoDB Local (what production uses), with on-demand fetching:
-```bash
-task dev            # DynamoDB (Docker) + MCP server + worker + Inspector; Ctrl+C stops the lot
-```
-Edit anything under `server/`, `common/` or `pipeline/` and the server/worker restart by
-themselves; the Inspector stays connected (re-run the tool call). Then in the Inspector call
-`catch_me_up` with `show` = a real show we haven't stored, e.g. "Severance": the reply says it's
-being fetched, the worker pulls it from TVmaze into DynamoDB (seconds in the default
-`baseline` mode), and asking again returns the recap. `task dev WORKER_MODE=llm` builds
-recaps with Claude on Bedrock instead (needs AWS credentials). `task db:down` / `task db:reset`
-stop or wipe the local database.
+Storage is **always DynamoDB** (DynamoDB Local in Docker here, AWS in production); there is no
+file fallback. `task dev` loads the fictional demo show, so you can start testing immediately in
+the Inspector (primary way to test the tools). Edit anything under `server/`, `common/` or
+`pipeline/` and the server/worker restart by themselves; re-run the tool call in the Inspector.
+
+Ask for a real show that isn't stored, e.g. `catch_me_up` with `show` = "Severance", season 1,
+episode 2: the reply says it's being fetched, the worker pulls it from TVmaze into DynamoDB
+(seconds in the default `baseline` mode), and asking again returns the recap. `task dev
+WORKER_MODE=llm` builds recaps with Claude on Bedrock instead (needs AWS credentials).
+
+The pieces separately: `task db:up` (DynamoDB Local + tables + demo show), `task server`,
+`task worker`, `task inspect` or `task inspect:smoke`, `task db:show` (look inside the tables),
+`task demo` (demos only: chat-style web UI at http://127.0.0.1:8080), `task db:down` /
+`task db:reset` (stop / wipe the local database).
 Configuration: copy [`.env.example`](.env.example) to `.env` (git-ignored; `task` loads it) to
 change host/port, limits, Bedrock model, AWS profile. Every variable is documented there.
-`task` lists every task. Without Task/uv: `python3 -m venv .venv && . .venv/bin/activate &&
-pip install -e ".[dev]" && pytest && scripts/run_demo.sh`.
+`task` lists every task.
 Full instructions, a scripted walkthrough, real shows, Bedrock, tunnels:
 **[docs/testing.md](docs/testing.md)**. How it works: **[docs/how-it-works.md](docs/how-it-works.md)**.
 
@@ -70,27 +69,19 @@ The server is **stateless and profile-agnostic**: it stores nothing about users,
 login, account linking or per-user data. The caller (Alexa+) passes the show and the episode the
 user says they have reached on every call.
 
-## Storage backends
-Digests and the on-demand job queue go through one interface
-([`common/backend.py`](common/backend.py)). Pick it with `STORAGE_BACKEND`:
-
-| Value | Where | Use |
-|---|---|---|
-| `file` (default) | JSON files under `$DATA_DIR` | tests, offline demo |
-| `dynamodb` | tables `<prefix>shows`, `<prefix>jobs` (`DYNAMODB_TABLE_PREFIX`, `AWS_REGION`, `DYNAMODB_ENDPOINT_URL`) | DynamoDB Local in development, AWS in production |
-
+## Storage
+Digests and the on-demand job queue live in **DynamoDB**, behind one small interface
+([`common/backend.py`](common/backend.py)): tables `<prefix>shows` and `<prefix>jobs`
+(`DYNAMODB_TABLE_PREFIX`, `AWS_REGION`, `DYNAMODB_ENDPOINT_URL`), each with a single string hash
+key `id` and the document stored as JSON in `data`. `task db:up` runs DynamoDB Local and creates
+the tables; production should provision them in IaC. Tests use `moto` (in memory).
 ```bash
-task db:up                       # DynamoDB Local + tables + demo data (scripts/dynamo_local.sh)
-task server:dynamo               # server against it
-# or by hand:
-export STORAGE_BACKEND=dynamodb DYNAMODB_ENDPOINT_URL=http://localhost:8001 \
-       AWS_REGION=us-east-1 AWS_ACCESS_KEY_ID=local AWS_SECRET_ACCESS_KEY=local
-python -m common.migrate --from file --src-dir data --create-tables   # copy data/ into DynamoDB
-python -m pipeline.run --mode baseline "Severance"
+task db:up                                   # DynamoDB Local + tables + demo show
+task pipeline -- "Severance"                 # batch-build a show into DynamoDB
+task db:show -- shows                        # what's stored
 ```
-DynamoDB tables have a single string hash key `id` (`--create-tables` creates them for
-DynamoDB Local; production should provision them in IaC).
-The raw-text and LLM caches stay on local disk under `$DATA_DIR/cache` in every mode.
+The pipeline's raw-text and LLM caches are plain files under `$DATA_DIR/cache` (default `./data`);
+they are a download cache, not a data store.
 
 ## Shows we don't have yet (on demand)
 With `ON_DEMAND=1` the server answers an unknown show honestly, checks the name against TVmaze,

@@ -56,7 +56,7 @@ def main() -> None:
     args = parser.parse_args()
 
     store = ShowStore()
-    jobs = JobStore(store.root)
+    jobs = JobStore(store.root, store.backend)
     llm = DiskCachedLLM(BedrockLLM(), store.root / "cache" / "llm") if args.mode == "llm" else None
     if (n := jobs.requeue_stale_running()) and not args.once:
         print(f"re-queued {n} job(s) left running by a previous worker")

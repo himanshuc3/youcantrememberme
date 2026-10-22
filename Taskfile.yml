@@ -5,16 +5,26 @@
 
 version: '3'
 
-# Optional `.env` (copy .env.example). Real shell variables and the env set on tasks below win over it.
+# Optional `.env` (copy .env.example). Real shell variables and the env set below win over it.
 dotenv: ['.env']
 
+# Storage is always DynamoDB; locally that is DynamoDB Local in Docker (`task db:up`). To point
+# a task at real AWS, override from your shell, e.g. `DYNAMODB_ENDPOINT_URL= AWS_PROFILE=x task server`.
+env:
+  DYNAMODB_ENDPOINT_URL: http://localhost:{{.DYNAMO_PORT}}
+  AWS_REGION: us-east-1
+  AWS_ACCESS_KEY_ID: local       # DynamoDB Local ignores credentials but boto3 insists on some
+  AWS_SECRET_ACCESS_KEY: local
+  DATA_DIR: data                 # only the pipeline's download / LLM caches
+  ON_DEMAND: '1'
+  PORT: '{{.MCP_PORT}}'
+
 vars:
-  RUN: uv run --extra dev --extra dynamodb
+  RUN: uv run --extra dev
   MCP_PORT: 8000
   WEB_PORT: 8080
   WORKER_MODE: baseline   # baseline = TVmaze blurbs, no AWS; llm = Claude on Bedrock (needs creds)
   DYNAMO_PORT: 8001
-  DEMO_DATA: examples/demo-data
   # MCP Inspector (https://github.com/modelcontextprotocol/inspector), pinned; needs Node.
   INSPECTOR: npx -y @modelcontextprotocol/inspector@2.11.0
   MCP_URL: http://127.0.0.1:{{.MCP_PORT}}/mcp
@@ -27,9 +37,9 @@ tasks:
 
   # ---------------------------------------------------------------- setup
   setup:
-    desc: Create .venv and install dependencies (dev + dynamodb extras)
+    desc: Create .venv and install dependencies (dev extra)
     cmds:
-      - uv sync --extra dev --extra dynamodb
+      - uv sync --extra dev
 
   # ---------------------------------------------------------------- quality
   test:
@@ -63,21 +73,16 @@ tasks:
 
   # ---------------------------------------------------------------- run
   server:
-    desc: Run the MCP server on :{{.MCP_PORT}} (DATA_DIR defaults to the demo data)
-    env:
-      DATA_DIR: '{{.DEMO_DATA}}'
-      STORAGE_BACKEND: file   # offline demo data, whatever .env says
-      ON_DEMAND: '0'
-      PORT: '{{.MCP_PORT}}'
+    desc: MCP server on :{{.MCP_PORT}} against DynamoDB Local, on-demand fetching on (`task db:up` first)
+    vars:
+      SERVER_CMD: '{{.SERVER_CMD | default "python -m server.main"}}'
     cmds:
-      - '{{.RUN}} python -m server.main'
+      - '{{.RUN}} {{.SERVER_CMD}}'
 
   demo:
-    desc: Demo only - MCP server + chat web UI (:{{.WEB_PORT}}) on the offline demo data
-    env:
-      STORAGE_BACKEND: file
-      ON_DEMAND: '0'
+    desc: Demo only - starts DynamoDB Local, then MCP server + chat web UI (:{{.WEB_PORT}})
     cmds:
+      - task: db:up
       - '{{.RUN}} scripts/run_demo.sh'
 
   web:
@@ -88,12 +93,19 @@ tasks:
       - '{{.RUN}} uvicorn web_demo.app:app --port {{.WEB_PORT}}'
 
   worker:
-    desc: Process queued on-demand shows once, then exit
+    desc: Worker that fills DynamoDB for queued shows; polls forever (WORKER_MODE=baseline|llm)
+    vars:
+      WORKER_CMD: '{{.WORKER_CMD | default (printf "python -m pipeline.worker --mode %s --poll 2" .WORKER_MODE)}}'
+    cmds:
+      - '{{.RUN}} {{.WORKER_CMD}}'
+
+  worker:once:
+    desc: Process the queued on-demand shows once, then exit
     cmds:
       - '{{.RUN}} python -m pipeline.worker --once'
 
   pipeline:
-    desc: 'Build recaps from TVmaze (no AWS). Usage: task pipeline -- "Severance" "The Bear"'
+    desc: 'Build recaps from TVmaze into DynamoDB (no AWS account needed locally). Usage: task pipeline -- "Severance" "The Bear"'
     cmds:
       - '{{.RUN}} python -m pipeline.run --mode baseline {{.CLI_ARGS}}'
 
@@ -146,7 +158,7 @@ tasks:
 
   # ---------------------------------------------------------------- infra
   db:up:
-    desc: Start DynamoDB Local in Docker (:{{.DYNAMO_PORT}}), create tables, seed demo data
+    desc: Start DynamoDB Local in Docker (:{{.DYNAMO_PORT}}), create tables, load the demo show
     cmds:
       - '{{.RUN}} scripts/dynamo_local.sh'
 
@@ -161,44 +173,8 @@ tasks:
 
   db:show:
     desc: 'Look inside local DynamoDB. Usage: task db:show | task db:show -- shows | task db:show -- shows 526'
-    env:
-      STORAGE_BACKEND: dynamodb
-      DYNAMODB_ENDPOINT_URL: http://localhost:{{.DYNAMO_PORT}}
-      AWS_REGION: us-east-1
-      AWS_ACCESS_KEY_ID: local
-      AWS_SECRET_ACCESS_KEY: local
     cmds:
       - '{{.RUN}} python scripts/db_show.py {{.CLI_ARGS}}'
-
-  server:dynamo:
-    desc: MCP server on DynamoDB Local with on-demand fetching on (run `task db:up` first)
-    vars:
-      SERVER_CMD: '{{.SERVER_CMD | default "python -m server.main"}}'
-    env:
-      STORAGE_BACKEND: dynamodb
-      DYNAMODB_ENDPOINT_URL: http://localhost:{{.DYNAMO_PORT}}
-      AWS_REGION: us-east-1
-      AWS_ACCESS_KEY_ID: local
-      AWS_SECRET_ACCESS_KEY: local
-      ON_DEMAND: '1'
-      PORT: '{{.MCP_PORT}}'
-      DATA_DIR: data   # only the pipeline's download/LLM caches live here with DynamoDB
-    cmds:
-      - '{{.RUN}} {{.SERVER_CMD}}'
-
-  worker:dynamo:
-    desc: Worker that fills DynamoDB Local for queued shows; polls forever (WORKER_MODE=baseline|llm)
-    vars:
-      WORKER_CMD: '{{.WORKER_CMD | default (printf "python -m pipeline.worker --mode %s --poll 2" .WORKER_MODE)}}'
-    env:
-      STORAGE_BACKEND: dynamodb
-      DYNAMODB_ENDPOINT_URL: http://localhost:{{.DYNAMO_PORT}}
-      AWS_REGION: us-east-1
-      AWS_ACCESS_KEY_ID: local
-      AWS_SECRET_ACCESS_KEY: local
-      DATA_DIR: data
-    cmds:
-      - '{{.RUN}} {{.WORKER_CMD}}'
 
   # ---------------------------------------------------------------- dev (everything at once)
   dev:
@@ -214,13 +190,13 @@ tasks:
   dev:server:
     internal: true
     cmds:
-      - task: server:dynamo
+      - task: server
         vars: {SERVER_CMD: 'watchfiles "python -m server.main" server common'}
 
   dev:worker:
     internal: true
     cmds:
-      - task: worker:dynamo
+      - task: worker
         vars:
           WORKER_CMD: 'watchfiles "python -m pipeline.worker --mode {{.WORKER_MODE}} --poll 2" pipeline common'
 
