@@ -11,7 +11,7 @@ Summaries are computed **offline**; the server only looks them up, so answers ar
 
 ```
 pipeline/  TVmaze (+Wikipedia) -> per-episode digests -> per-season digests -> DynamoDB (shows table)
-server/    MCP server (Streamable HTTP): find_show, catch_me_up, get_recap, get_previously_on
+server/    MCP server (Streamable HTTP): find_show, catch_me_up, get_recap, get_previously_on, get_characters
 common/     shared models + storage
 evals/     spoiler-leak and speakability checks
 addon-package/  Alexa add-on listing (addon.json, images, privacy/terms)
@@ -43,6 +43,15 @@ episode 2: the reply says it's being fetched, the worker pulls it from TVmaze in
 (seconds in the default `baseline` mode), and asking again returns the recap. `task dev
 WORKER_MODE=llm` builds recaps with Claude on Bedrock instead (needs AWS credentials).
 
+**Web demo with a real LLM.** A model plays Alexa+: it reads the server's tool list, decides which
+tool to call, fills in the arguments and speaks the answer. Set `WEB_DEMO_LLM` in `.env` (see
+[`.env.example`](.env.example)): `bedrock` (Claude on Bedrock; a Bedrock API key in
+`AWS_BEARER_TOKEN_BEDROCK` is enough), `anthropic` (`ANTHROPIC_API_KEY`), `openai` (any
+OpenAI-compatible API with tool calling: OpenRouter, OpenAI, or a local Ollama with no key), or
+`rules` (offline regex parser). Run `task dev` (or `task server`) and `task web`, then open
+http://127.0.0.1:8080. Try "I'm on season 1 episode 3 of The Lighthouse Keepers, catch me up", then
+"make that sound like a noir detective" or "who is Mara?". Provider errors show up in the chat.
+
 The pieces separately: `task db:up` (DynamoDB Local + tables + demo show), `task server`,
 `task worker`, `task inspect` or `task inspect:smoke`, `task db:show` (look inside the tables),
 `task demo` (demos only: chat-style web UI at http://127.0.0.1:8080), `task db:down` /
@@ -61,8 +70,9 @@ Docs: [Bedrock setup](docs/bedrock.md) · [alexa-ai CLI on Pop!_OS](docs/setup-a
 | Tool | Use |
 |---|---|
 | `find_show` | is a show available, and how many seasons/episodes |
-| `catch_me_up` | recap from the start through the episode the user last watched (show, season, episode) |
+| `catch_me_up` | recap from the start through the episode the user last watched (show, season, episode; optional `style`: the caller restyles it, e.g. "like a noir detective") |
 | `get_recap` | recap between two explicit points |
+| `get_characters` | spoiler-safe who's who, or who one character is, through an episode |
 | `get_previously_on` | "previously on": the last few episodes before the one they're about to watch |
 
 The server is **stateless and profile-agnostic**: it stores nothing about users, so there is no

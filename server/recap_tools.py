@@ -32,11 +32,16 @@ class RecapTools:
         season: int,
         episode: int,
         detail: Literal["brief", "standard"] = "standard",
+        style: str | None = None,
     ) -> dict:
         """Spoiler-safe recap of everything from the start of the show through the episode the
-        user last watched ("I'm on season 2, episode 4" means they finished that episode)."""
+        user last watched ("I'm on season 2, episode 4" means they finished that episode).
+
+        style (optional): a free-text request such as "like a noir narrator", "for a five year
+        old" or "with the characters of Friends". The server cannot restyle text itself; it
+        returns `rewrite` instructions and you retell `text` in that style."""
         return tools.catch_me_up(
-            self.store, show, season, episode, detail, on_demand=self.on_demand
+            self.store, show, season, episode, detail, style, on_demand=self.on_demand
         )
 
     def get_recap(
@@ -47,10 +52,15 @@ class RecapTools:
         from_season: int = 1,
         from_episode: int = 1,
         detail: Literal["brief", "standard"] = "standard",
+        style: str | None = None,
     ) -> dict:
         """Spoiler-safe spoken recap of a TV show between two explicit points. Only events up
         to to_season/to_episode are included; omit to_episode to recap through the end of
-        that season."""
+        that season.
+
+        style (optional): a free-text request such as "like a noir narrator" or "with the
+        characters of Friends". The server cannot restyle text itself; it returns `rewrite`
+        instructions and you retell `text` in that style."""
         return tools.get_recap(
             self.store,
             show,
@@ -59,19 +69,46 @@ class RecapTools:
             from_season,
             from_episode,
             detail,
+            style,
             on_demand=self.on_demand,
         )
 
-    def get_previously_on(self, show: str, season: int, episode: int, count: int = 2) -> dict:
+    def get_previously_on(
+        self,
+        show: str,
+        season: int,
+        episode: int,
+        count: int = 2,
+        style: str | None = None,
+    ) -> dict:
         """'Previously on...' recap of the last few episodes (default 2) before the given
-        season and episode, which is the one the user is about to watch."""
+        season and episode, which is the one the user is about to watch.
+
+        style (optional): a free-text request such as "like a noir narrator". The server
+        cannot restyle text itself; it returns `rewrite` instructions and you retell `text`."""
         return tools.get_previously_on(
-            self.store, show, season, episode, count, on_demand=self.on_demand
+            self.store, show, season, episode, count, style, on_demand=self.on_demand
+        )
+
+    def get_characters(
+        self, show: str, season: int, episode: int, character: str | None = None
+    ) -> dict:
+        """Spoiler-safe "who's who". Without `character`: the characters introduced so far
+        (through the season and episode the user has reached). With `character` (a spoken name
+        like "Mara"): who they are and what is known about them so far. Never reveals
+        characters who appear after that episode."""
+        return tools.get_characters(
+            self.store, show, season, episode, character, on_demand=self.on_demand
         )
 
     def __get_tools(self):
-        tools = (self.find_show, self.catch_me_up, self.get_previously_on)
-        return tools
+        return (
+            self.find_show,
+            self.catch_me_up,
+            self.get_recap,
+            self.get_previously_on,
+            self.get_characters,
+        )
 
     def register(self, mcp: MCPServer) -> None:
         mcp_tools = self.__get_tools()

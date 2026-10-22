@@ -22,13 +22,14 @@ dependencies = [
 pipeline = ["anthropic[bedrock]>=1.13"]
 # AWS Lambda entry point (server/handler.py)
 aws = ["mangum>=0.17"]
-# fallback demo client
-web = ["fastapi>=0.110", "uvicorn>=0.30"]
+# demo web client (its Bedrock agent needs the anthropic SDK)
+web = ["fastapi>=0.110", "uvicorn>=0.30", "anthropic[bedrock]>=1.13"]
 # icon generation for addon-package/
 assets = ["pillow>=10"]
 # everything the test suite needs: `pip install -e ".[dev]"` is enough
 dev = [
     "pytest>=8", "ruff>=0.5", "fastapi>=0.110", "uvicorn>=0.30",
+    "anthropic[bedrock]>=1.13",  # the web demo's Bedrock agent (tests use a fake)
     "moto[dynamodb]>=5",  # in-memory DynamoDB for tests
     "watchfiles>=0.21",  # auto-restart server/worker in `task dev`
 ]

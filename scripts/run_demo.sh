@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Start the MCP server (:8000) and the chat web demo (:8080). Needs DynamoDB Local with the demo
-# show loaded (`task db:up`), plus the usual DYNAMODB_ENDPOINT_URL / AWS_* settings (`task demo` sets them).
+# show loaded (`task db:up`), plus DYNAMODB_ENDPOINT_URL (`task demo` sets it).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

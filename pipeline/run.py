@@ -56,6 +56,7 @@ def process_show(name: str, mode: str, store: ShowStore, llm: LLM | None = None)
 
     data = ShowData(
         show=show,
+        cast=tvmaze.fetch_cast(show.id),
         episodes=ep_digests,
         seasons=build_season_digests(show, ep_digests, season_make),
     )

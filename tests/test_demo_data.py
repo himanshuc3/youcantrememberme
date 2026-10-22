@@ -42,3 +42,13 @@ def test_demo_data_is_in_sync_with_the_generator(show):
     from make_demo_data import build
 
     assert build().model_dump() == show.model_dump()
+
+
+def test_characters_are_introduced_only_when_a_digest_names_them(show):
+    from server.characters import characters_through
+
+    names = lambda pos: [c.name for c in characters_through(show, pos)]
+    assert names((1, 1)) == ["Mara Voss"]
+    assert names((1, 2)) == ["Mara Voss", "Teo Marsh"]
+    # the father is the twist and is never named in a digest, so he is never listed
+    assert "Edwin Voss" not in names((2, 4))

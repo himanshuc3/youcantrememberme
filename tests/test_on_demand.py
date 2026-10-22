@@ -132,7 +132,7 @@ def test_over_http_the_miss_queues_a_job(env, monkeypatch):
 
     from starlette.testclient import TestClient
 
-    from server.main import build_app
+    from server.app import ApplicationServer
 
     monkeypatch.setenv("ALLOWED_HOSTS", "testserver")
     shows, jobs, od = env
@@ -143,7 +143,7 @@ def test_over_http_the_miss_queues_a_job(env, monkeypatch):
         "method": "tools/call",
         "params": {"name": "get_recap", "arguments": {"show": "New Show", "to_season": 1}},
     }
-    with TestClient(build_app(shows, od)) as client:
+    with TestClient(ApplicationServer(shows, od).asgi_app()) as client:
         resp = client.post("/mcp", json=body, headers=headers)
     result = json.loads(resp.json()["result"]["content"][0]["text"])
     assert result["pending"] is True and result["show_id"] == 99

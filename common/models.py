@@ -60,10 +60,19 @@ class SeasonDigest(BaseModel):
     episode_count: int  # number of episodes this digest was built from
 
 
+class CastMember(BaseModel):
+    character: str
+    actor: str | None = None
+
+
 class ShowData(BaseModel):
-    """Everything the server needs for one show, stored as one JSON file."""
+    """Everything the server needs for one show, stored as one DynamoDB item."""
 
     show: Show
+    # The WHOLE cast, so listing it as-is would leak characters introduced later. The server
+    # only ever shows characters whose names already appear in digests up to the user's
+    # position (server/characters.py).
+    cast: list[CastMember] = Field(default_factory=list)
     episodes: list[EpisodeDigest] = Field(default_factory=list)
     seasons: list[SeasonDigest] = Field(default_factory=list)
     attribution: list[str] = Field(default_factory=lambda: [TVMAZE_ATTRIBUTION])

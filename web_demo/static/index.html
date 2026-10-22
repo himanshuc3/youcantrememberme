@@ -78,9 +78,10 @@
 <script>
   const EXAMPLES = [
     "Do you have The Lighthouse Keepers?",
-    "Catch me up on The Lighthouse Keepers, I'm on season 1 episode 3",
-    "Previously on The Lighthouse Keepers before season 2 episode 1",
-    "Recap The Lighthouse Keepers through season 1",
+    "I'm on season 1 episode 3 of The Lighthouse Keepers, catch me up",
+    "Who is Mara? I've just finished season 1 episode 2",
+    "Recap The Lighthouse Keepers through season 1 like a noir detective",
+    "Recap season 1 of The Lighthouse Keepers as if it starred the cast of a sitcom",
   ];
   const log = document.getElementById("log");
   const input = document.getElementById("text");
@@ -98,13 +99,16 @@
   function addBot(data) {
     const box = el("div", "msg bot");
     box.appendChild(el("div", "", data.spoken || "(no answer)"));
-    const r = data.result || {};
+    const calls = data.calls || [];
+    const r = calls.length ? calls[calls.length - 1].result || {} : {};
     const badges = el("div", "badges");
-    if (data.tool) badges.appendChild(badge("tool: " + data.tool));
+    if (data.mode) badges.appendChild(badge(data.mode === "rules" ? "rules parser" : data.mode + " agent"));
+    for (const c of calls) badges.appendChild(badge("tool: " + c.tool));
+    if (r.rewrite) badges.appendChild(badge("style: " + r.rewrite.style, "ok"));
     if (r.covered_through) badges.appendChild(badge("covered through " + r.covered_through, "ok"));
     if (r.truncated) badges.appendChild(badge("older events trimmed for length", "warn"));
     if (r.pending) badges.appendChild(badge("fetching in the background", "warn"));
-    if (data.error) badges.appendChild(badge("server unreachable", "warn"));
+    if (data.error) badges.appendChild(badge("error", "warn"));
     if (badges.children.length) box.appendChild(badges);
 
     if (data.spoken && "speechSynthesis" in window) {
@@ -118,16 +122,20 @@
       row.appendChild(b);
       box.appendChild(row);
     }
-    if (data.tool) {
+    if (calls.length) {
       const d = el("details");
-      d.appendChild(el("summary", "", "MCP call and result"));
+      d.appendChild(el("summary", "", "MCP calls and results (" + calls.length + ")"));
       d.appendChild(el("pre", "", JSON.stringify(
-        { tools_call: { name: data.tool, arguments: data.arguments }, result: data.result }, null, 2)));
+        calls.map((c) => ({ tools_call: { name: c.tool, arguments: c.arguments }, result: c.result })),
+        null, 2)));
       box.appendChild(d);
     }
     log.appendChild(box);
     box.scrollIntoView({ block: "end", behavior: "smooth" });
   }
+
+  // The server remembers nothing, so the page keeps the conversation and sends it back each turn.
+  let history = [];
 
   async function send(text) {
     if (!text.trim()) return;
@@ -136,9 +144,11 @@
     try {
       const res = await fetch("/api/ask", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, history }),
       });
-      addBot(await res.json());
+      const data = await res.json();
+      history = data.history || history;
+      addBot(data);
     } catch (e) {
       addBot({ spoken: "Could not reach the demo server: " + e, error: true });
     }

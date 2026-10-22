@@ -12,8 +12,9 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from common.models import ShowData
+from common.models import ShowData, fmt_pos
 from common.store import ShowStore
+from server import characters as chars
 from server.assemble import assemble_recap, previously_on
 from server.on_demand import OnDemand
 from server.resolve import resolve_show
@@ -57,6 +58,28 @@ def _refreshing(
     return {**_requested(req), "found": True}
 
 
+REWRITE = (
+    "The user asked for this recap in a particular style. Retell `text` in that style as a short "
+    "spoken answer. Use ONLY the events and characters in `text`; if they asked to swap in "
+    "characters from another show or story, only rename them and keep every event identical. "
+    "Never add, hint at or invent plot beyond `text`, and say nothing about episodes after "
+    "`covered_through`."
+)
+
+
+def _styled(out: dict[str, Any], style: str | None) -> dict[str, Any]:
+    """The server has no LLM, so a requested style is handed to the caller's LLM as instructions."""
+    if (
+        style
+        and style.strip()
+        and out.get("found")
+        and not out.get("pending")
+        and "covered_through" in out
+    ):
+        out["rewrite"] = {"style": style.strip(), "instructions": REWRITE}
+    return out
+
+
 def _bad_episode(sd: ShowData, season: int, episode: int) -> str | None:
     """Return a spoken error if (season, episode) doesn't exist for this show."""
     sizes = sd.show.season_sizes
@@ -93,6 +116,7 @@ def get_recap(
     from_season: int = 1,
     from_episode: int = 1,
     detail: Literal["brief", "standard"] = "standard",
+    style: str | None = None,
     *,
     on_demand: OnDemand | None = None,
 ) -> dict[str, Any]:
@@ -107,7 +131,7 @@ def get_recap(
         recap = assemble_recap(sd, (from_season, from_episode), end, detail)
     except (ValueError, LookupError) as exc:
         return {"found": True, "text": str(exc)}
-    return {"found": True, **recap.model_dump()}
+    return _styled({"found": True, **recap.model_dump()}, style)
 
 
 def catch_me_up(
@@ -116,6 +140,7 @@ def catch_me_up(
     season: int,
     episode: int,
     detail: Literal["brief", "standard"] = "standard",
+    style: str | None = None,
     *,
     on_demand: OnDemand | None = None,
 ) -> dict[str, Any]:
@@ -131,7 +156,7 @@ def catch_me_up(
         recap = assemble_recap(sd, (1, 1), (season, episode), detail)
     except (ValueError, LookupError) as exc:
         return {"found": True, "text": str(exc)}
-    return {"found": True, **recap.model_dump()}
+    return _styled({"found": True, **recap.model_dump()}, style)
 
 
 def get_previously_on(
@@ -140,6 +165,7 @@ def get_previously_on(
     season: int,
     episode: int,
     count: int = 2,
+    style: str | None = None,
     *,
     on_demand: OnDemand | None = None,
 ) -> dict[str, Any]:
@@ -153,4 +179,61 @@ def get_previously_on(
     if (problem := _bad_episode(sd, season, episode)) is not None:
         return {"found": True, "text": problem}
     recap = previously_on(sd, (season, episode), count)
-    return {"found": True, **recap.model_dump()}
+    return _styled({"found": True, **recap.model_dump()}, style)
+
+
+def get_characters(
+    store: ShowStore,
+    show: str,
+    season: int,
+    episode: int,
+    character: str | None = None,
+    *,
+    on_demand: OnDemand | None = None,
+) -> dict[str, Any]:
+    """Who's who through (season, episode), or what is known about one character so far."""
+    sd = resolve_show(show, store.all())
+    if sd is None:
+        return _unknown(store, show, on_demand)
+    if (fetching := _refreshing(sd, (season, episode), on_demand)) is not None:
+        return fetching
+    if (problem := _bad_episode(sd, season, episode)) is not None:
+        return {"found": True, "text": problem}
+    if not sd.cast:  # stored before cast was fetched: re-fetch in the background if we can
+        req = on_demand.refresh(sd.show.id, sd.show.name) if on_demand is not None else None
+        text = (
+            req.text
+            if req is not None
+            else f"I don't have character details for {sd.show.name} yet."
+        )
+        return {"found": True, "show": sd.show.name, "pending": req is not None, "text": text}
+    pos = (season, episode)
+    if character:
+        match = chars.find_character(sd, character, pos)
+        if match is None:  # same answer for "not introduced yet" and "no such character"
+            return {
+                "found": True,
+                "show": sd.show.name,
+                "text": f"I don't know a character called {character} in {sd.show.name} "
+                f"through {fmt_pos(pos)}.",
+            }
+        return {
+            "found": True,
+            "show": sd.show.name,
+            "character": match.name,
+            "actor": match.actor,
+            "first_seen": fmt_pos(match.first_seen),
+            "known_so_far": [s for _, s in match.mentions[-chars.SNIPPET_LIMIT :]],
+            "covered_through": fmt_pos(pos),
+            "text": chars.speak_one(sd.show.name, match, pos),
+        }
+    listed = chars.characters_through(sd, pos)
+    return {
+        "found": True,
+        "show": sd.show.name,
+        "characters": [
+            {"name": c.name, "actor": c.actor, "first_seen": fmt_pos(c.first_seen)} for c in listed
+        ],
+        "covered_through": fmt_pos(pos),
+        "text": chars.speak_list(sd.show.name, listed, pos),
+    }

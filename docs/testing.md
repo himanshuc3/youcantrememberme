@@ -31,28 +31,42 @@ What they cover:
 | `test_demo_data.py` | a recap "through S1E3" never mentions the S1E5 twist; through the end of season 1 it does |
 | `test_digest_llm.py` | the LLM prompt for an episode contains only that episode + earlier digests (fake model, no AWS) |
 | `test_http_e2e.py` | real Streamable HTTP: protocol `2025-11-25`, tool list/descriptions, calls (stateless, required position arguments), Host-header protection |
-| `test_intent.py`, `test_web_demo.py` | the web demo's sentence parser and API |
+| `test_characters.py` | who's who never lists or hints at a character before they're named; styles become `rewrite` instructions |
+| `test_agent.py` | the Bedrock web-demo agent with a scripted fake model: tool choice, history, tool errors, loop cap |
+| `test_intent.py`, `test_web_demo.py` | the offline `rules` mode's sentence parser and API |
 
 ## 2. The web demo (for demos only; use the Inspector in section 3 for testing)
+Here an LLM plays Alexa+: it reads the server's tool list, picks tools, fills in the arguments and
+speaks the answer. Choose the provider with `WEB_DEMO_LLM` in `.env`:
+
+| `WEB_DEMO_LLM` | Needs |
+|---|---|
+| `bedrock` (default) | `AWS_BEARER_TOKEN_BEDROCK` (a Bedrock API key) and `AWS_REGION`, model access enabled; `WEB_DEMO_MODEL_ID` default `anthropic.claude-sonnet-5` |
+| `anthropic` | `ANTHROPIC_API_KEY`; model default `claude-sonnet-5-5` |
+| `openai` | any OpenAI-compatible API that supports tool calling: `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `WEB_DEMO_MODEL_ID`. OpenRouter: base URL `https://openrouter.ai/api/v1`. Local Ollama (free, no key): `http://localhost:11434/v1`, model e.g. `llama3.1` |
+| `rules` | nothing: an offline regex parser with fixed phrasings, no characters or styles |
+
 ```bash
-scripts/run_demo.sh
+cp .env.example .env     # set WEB_DEMO_LLM and the matching key / model
+task dev                 # DynamoDB + server + worker + Inspector   (or: task db:up && task server)
+task web                 # second terminal: the chat page on :8080
 ```
-Open <http://127.0.0.1:8080>. It starts the MCP server on `:8000` and the demo page on
-`:8080`. Press Ctrl+C to stop both. Click the example chips or type, in this order:
+Open <http://127.0.0.1:8080> and talk to it naturally, for example:
 
-1. `Do you have The Lighthouse Keepers?` → lists seasons and episode counts.
-2. `Catch me up on The Lighthouse Keepers, I'm on season 1 episode 3` → recap of episodes 1–3
+1. `Do you have The Lighthouse Keepers?` → seasons and episode counts.
+2. `I'm on season 1 episode 3 of The Lighthouse Keepers, catch me up` → recap of episodes 1–3
    only. **Check it never mentions the father.**
-3. `Previously on The Lighthouse Keepers before season 1 episode 3` → the two episodes before it.
-4. `Recap The Lighthouse Keepers through season 1` → full season 1 recap. **Now it does
-   mention the father**, because you asked for the whole season. That contrast is the
-   spoiler-safety guarantee.
-5. Click "MCP call and result" under any answer to see the exact `tools/call` and reply.
-6. The server remembers nothing between messages: every request has to name the show and the
-   episode, exactly as Alexa+ will pass them.
+3. `Who is Mara?` → reuses the position you gave; `get_characters`, only what's known so far.
+4. `Make that sound like a noir detective` → the server returns `rewrite` instructions and the
+   model retells the same recap in that style, adding no plot. Try `with the cast of a sitcom`.
+5. `Recap The Lighthouse Keepers through season 1` → full season 1 recap. **Now it does
+   mention the father**, because you asked for the whole season.
+6. Click "MCP calls and results" under any answer to see every `tools/call` the model made.
 
-The page's language understanding is a small rule-based parser (`web_demo/intent.py`). It
-understands the phrasings above, not free speech. On a real device Alexa+ does that part.
+If something is wrong with the provider (no key, no model access, a model without tool support) the
+chat shows the error. Small local models often handle tool calling badly; if answers look wrong,
+check "MCP calls and results" to see what the model actually called. The `task demo` shortcut starts
+DynamoDB, the server and this page together.
 
 ## 3. Test the MCP server directly (what Alexa+ talks to)
 Start DynamoDB Local and the server: `task db:up` then `task server` (port 8000).

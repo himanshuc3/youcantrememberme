@@ -1744,6 +1744,7 @@ aws = [
     { name = "mangum" },
 ]
 dev = [
+    { name = "anthropic", extra = ["bedrock"] },
     { name = "fastapi" },
     { name = "moto", extra = ["dynamodb"] },
     { name = "pytest" },
@@ -1755,13 +1756,16 @@ pipeline = [
     { name = "anthropic", extra = ["bedrock"] },
 ]
 web = [
+    { name = "anthropic", extra = ["bedrock"] },
     { name = "fastapi" },
     { name = "uvicorn" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "anthropic", extras = ["bedrock"], marker = "extra == 'dev'", specifier = ">=1.13" },
     { name = "anthropic", extras = ["bedrock"], marker = "extra == 'pipeline'", specifier = ">=1.13" },
+    { name = "anthropic", extras = ["bedrock"], marker = "extra == 'web'", specifier = ">=1.13" },
     { name = "boto3", specifier = ">=1.34" },
     { name = "fastapi", marker = "extra == 'dev'", specifier = ">=0.110" },
     { name = "fastapi", marker = "extra == 'web'", specifier = ">=0.110" },

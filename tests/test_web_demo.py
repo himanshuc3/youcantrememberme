@@ -4,7 +4,7 @@ from web_demo.app import create_app
 
 
 def make_client(fake):
-    return TestClient(create_app(fake))
+    return TestClient(create_app(fake, mode="rules"))
 
 
 def test_message_becomes_a_tool_call_and_returns_the_spoken_text():
@@ -18,7 +18,7 @@ def test_message_becomes_a_tool_call_and_returns_the_spoken_text():
     body = out.json()
     assert seen == [("get_recap", {"show": "The Bear", "to_season": 1})]
     assert body["spoken"] == "Season 1. A recap."
-    assert body["tool"] == "get_recap" and body["understood"]
+    assert body["calls"][0]["tool"] == "get_recap" and body["understood"]
 
 
 def test_unrecognised_input_gets_help_and_no_tool_call():

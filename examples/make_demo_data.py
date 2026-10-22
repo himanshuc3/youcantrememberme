@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from common.models import EpisodeDigest, SeasonDigest, Show, ShowData
+from common.models import CastMember, EpisodeDigest, SeasonDigest, Show, ShowData
 
 EPISODES = {
     (1, 1): "Mara Voss arrives at the Gull Rock lighthouse to replace the keeper who "
@@ -60,6 +60,13 @@ def build() -> ShowData:
             premiered="2026-01-01",
             season_sizes=sizes,
         ),
+        # Edwin Voss is the twist character: his name never appears in a digest, so the server
+        # never lists him (a character only counts once a digest names them).
+        cast=[
+            CastMember(character="Mara Voss", actor="Ines Calder"),
+            CastMember(character="Teo Marsh", actor="Tomas Reyes"),
+            CastMember(character="Edwin Voss", actor="Anders Holm-Reyes"),
+        ],
         episodes=[
             EpisodeDigest(season=s, number=n, digest=text)
             for (s, n), text in sorted(EPISODES.items())

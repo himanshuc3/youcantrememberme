@@ -6,7 +6,7 @@ import json
 import pytest
 from starlette.testclient import TestClient
 
-from server.main import build_app
+from server.app import ApplicationServer
 
 HEADERS = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
 
@@ -14,7 +14,7 @@ HEADERS = {"Content-Type": "application/json", "Accept": "application/json, text
 @pytest.fixture
 def client(shows, monkeypatch):
     monkeypatch.setenv("ALLOWED_HOSTS", "testserver")
-    with TestClient(build_app(shows)) as c:
+    with TestClient(ApplicationServer(shows).asgi_app()) as c:
         yield c
 
 
@@ -55,6 +55,7 @@ def test_lists_all_tools(client):
         "catch_me_up",
         "get_recap",
         "get_previously_on",
+        "get_characters",
     }
 
 
@@ -96,21 +97,21 @@ def test_out_of_range_position_gets_a_spoken_error(client):
 def test_unlisted_host_is_rejected_unless_allowed(shows, monkeypatch):
     """Without this, the server would answer 421 behind any tunnel or cloud URL."""
     monkeypatch.delenv("ALLOWED_HOSTS", raising=False)
-    with TestClient(build_app(shows)) as c:
+    with TestClient(ApplicationServer(shows).asgi_app()) as c:
         resp = c.post(
             "/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, headers=HEADERS
         )
         assert resp.status_code == 421
 
     monkeypatch.setenv("ALLOWED_HOSTS", "testserver")
-    with TestClient(build_app(shows)) as c:
+    with TestClient(ApplicationServer(shows).asgi_app()) as c:
         resp = c.post(
             "/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, headers=HEADERS
         )
         assert resp.status_code == 200
 
     monkeypatch.setenv("ALLOWED_HOSTS", "*")
-    with TestClient(build_app(shows)) as c:
+    with TestClient(ApplicationServer(shows).asgi_app()) as c:
         resp = c.post(
             "/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, headers=HEADERS
         )

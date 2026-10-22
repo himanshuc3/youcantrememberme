@@ -44,12 +44,17 @@ class DynamoBackend:
 
     def __init__(self, prefix: str | None = None, region: str | None = None, resource=None):
         if resource is None:
-            import boto3  # needs the `dynamodb` extra (already present on AWS Lambda)
+            import boto3
 
+            endpoint = os.environ.get("DYNAMODB_ENDPOINT_URL") or None
+            # DynamoDB Local ignores credentials. Passing dummy ones keeps the real AWS
+            # credentials in the environment (used for Bedrock) out of local DynamoDB calls.
+            local = {"aws_access_key_id": "local", "aws_secret_access_key": "local"}
             resource = boto3.resource(
                 "dynamodb",
                 region_name=region or os.environ.get("AWS_REGION", "us-east-1"),
-                endpoint_url=os.environ.get("DYNAMODB_ENDPOINT_URL") or None,
+                endpoint_url=endpoint,
+                **(local if endpoint else {}),
             )
         self.resource = resource
         self.prefix = (

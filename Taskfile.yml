@@ -10,11 +10,9 @@ dotenv: ['.env']
 
 # Storage is always DynamoDB; locally that is DynamoDB Local in Docker (`task db:up`). To point
 # a task at real AWS, override from your shell, e.g. `DYNAMODB_ENDPOINT_URL= AWS_PROFILE=x task server`.
+# AWS credentials / region are deliberately NOT set here: put yours (for Bedrock) in `.env`.
 env:
   DYNAMODB_ENDPOINT_URL: http://localhost:{{.DYNAMO_PORT}}
-  AWS_REGION: us-east-1
-  AWS_ACCESS_KEY_ID: local       # DynamoDB Local ignores credentials but boto3 insists on some
-  AWS_SECRET_ACCESS_KEY: local
   DATA_DIR: data                 # only the pipeline's download / LLM caches
   ON_DEMAND: '1'
   PORT: '{{.MCP_PORT}}'
@@ -86,7 +84,7 @@ tasks:
       - '{{.RUN}} scripts/run_demo.sh'
 
   web:
-    desc: Demo-only web chat UI (use `task inspect` for testing) (needs `task server` running)
+    desc: Demo-only chat UI where Claude on Bedrock calls the MCP tools (needs `task server` and AWS creds in .env)
     env:
       MCP_URL: '{{.MCP_URL}}'
     cmds:

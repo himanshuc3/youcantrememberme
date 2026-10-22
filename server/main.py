@@ -10,12 +10,7 @@ import os
 
 import uvicorn  # ASGI (Asynchronous Server Gateway Interface) server
 
-from common.store import ShowStore
 from server.app import app
-from server.on_demand import OnDemand
-
-
-
 
 if __name__ == "__main__":
     uvicorn.run(

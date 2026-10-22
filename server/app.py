@@ -26,8 +26,11 @@ MCP_CONFIG = {
         "Spoiler-safe TV recaps. The server remembers nothing about users: always pass "
         "the show and the season/episode the user says they have reached. Use catch_me_up "
         "for 'catch me up, I'm on season 2 episode 4', get_previously_on for a short "
-        "'previously on' before the episode they are about to watch, and get_recap for an "
-        "explicit range. Never reveal anything past the episode the user has reached."
+        "'previously on' before the episode they are about to watch, get_recap for an "
+        "explicit range, and get_characters for 'who is X' or 'who's who' questions. If the "
+        "user asks for a style (noir, for a child, with another show's characters...), pass it "
+        "as `style` and retell the returned text accordingly, adding no new plot. Never reveal "
+        "anything past the episode the user has reached."
     ),
 }
 
@@ -55,9 +58,9 @@ def transport_security() -> TransportSecuritySettings:
 
 
 class ApplicationServer:
-    def __init__(self):
-        self.store = ShowStore()
-        if os.environ.get("ON_DEMAND") == "1":
+    def __init__(self, store: ShowStore | None = None, on_demand: OnDemand | None = None):
+        self.store = store or ShowStore()
+        if on_demand is None and os.environ.get("ON_DEMAND") == "1":
             # Unknown shows get queued for `python -m pipeline.worker` (see server/on_demand.py).
             on_demand = OnDemand.from_env(self.store.root, backend=self.store.backend)
         self.mcp = MCPServer(**MCP_CONFIG)
@@ -69,5 +72,6 @@ class ApplicationServer:
         return self.mcp.streamable_http_app(
             stateless_http=True, json_response=True, transport_security=transport_security()
         )
+
 
 app = ApplicationServer().asgi_app()

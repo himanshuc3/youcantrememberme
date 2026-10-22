@@ -7,9 +7,6 @@ cd "$(dirname "$0")/.."
 docker compose up -d dynamodb
 
 export DYNAMODB_ENDPOINT_URL=${DYNAMODB_ENDPOINT_URL:-http://localhost:8001}
-export AWS_REGION=${AWS_REGION:-us-east-1}
-# DynamoDB Local ignores credentials but boto3 insists on some.
-export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-local} AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-local}
 
 if [ "${1:-}" = "--no-seed" ]; then
   python scripts/seed_demo.py --tables-only
@@ -21,7 +18,6 @@ cat <<MSG
 
 DynamoDB Local is up at $DYNAMODB_ENDPOINT_URL. Run the server against it with \`task server\`, or:
 
-  export DYNAMODB_ENDPOINT_URL=$DYNAMODB_ENDPOINT_URL AWS_REGION=$AWS_REGION \\
-         AWS_ACCESS_KEY_ID=local AWS_SECRET_ACCESS_KEY=local
+  export DYNAMODB_ENDPOINT_URL=$DYNAMODB_ENDPOINT_URL
   python -m server.main
 MSG

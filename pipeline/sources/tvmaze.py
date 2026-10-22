@@ -12,7 +12,7 @@ import time
 
 import httpx
 
-from common.models import Episode, Show
+from common.models import CastMember, Episode, Show
 
 BASE = "https://api.tvmaze.com"
 HEADERS = {"User-Agent": "youcantrememberme-hackathon/0.1"}
@@ -46,6 +46,26 @@ def lookup_show(query: str, timeout: float = 1.5) -> tuple[int, str] | None:
     resp.raise_for_status()
     raw = resp.json()
     return raw["id"], raw["name"]
+
+
+def fetch_cast(show_id: int) -> list[CastMember]:
+    """The show's main cast as (character, actor). Best effort: a failure means no cast."""
+    try:
+        with httpx.Client(headers=HEADERS, timeout=20) as client:
+            resp = _get(client, f"/shows/{show_id}/cast")
+            resp.raise_for_status()
+            raw = resp.json()
+    except httpx.HTTPError:
+        return []
+    seen: set[str] = set()
+    cast = []
+    for entry in raw:
+        name = (entry.get("character") or {}).get("name")
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        cast.append(CastMember(character=name, actor=(entry.get("person") or {}).get("name")))
+    return cast
 
 
 def fetch_show_and_episodes(query: str) -> tuple[Show, list[Episode]]:

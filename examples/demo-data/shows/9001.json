@@ -12,6 +12,20 @@
       "2": 4
     }
   },
+  "cast": [
+    {
+      "character": "Mara Voss",
+      "actor": "Ines Calder"
+    },
+    {
+      "character": "Teo Marsh",
+      "actor": "Tomas Reyes"
+    },
+    {
+      "character": "Edwin Voss",
+      "actor": "Anders Holm-Reyes"
+    }
+  ],
   "episodes": [
     {
       "season": 1,
