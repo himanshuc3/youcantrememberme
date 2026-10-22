@@ -10,22 +10,24 @@ SHOW = "The Lighthouse Keepers"
     [
         (
             f"I'm on season 2 episode 3 of {SHOW}",
-            "save_progress",
+            "catch_me_up",
             {"show": SHOW, "season": 2, "episode": 3},
         ),
         (
             f"I've watched {SHOW} season one episode four",
-            "save_progress",
+            "catch_me_up",
             {"show": SHOW, "season": 1, "episode": 4},
         ),
         (
             f"i just finished s2e4 of {SHOW}.",
-            "save_progress",
+            "catch_me_up",
             {"show": SHOW, "season": 2, "episode": 4},
         ),
-        ("catch me up", "catch_me_up", {}),
-        (f"Catch me up on {SHOW}", "catch_me_up", {"show": SHOW}),
-        ("previously on", "get_previously_on", {}),
+        (
+            f"Catch me up on {SHOW}, I'm on season 1 episode 3",
+            "catch_me_up",
+            {"show": SHOW, "season": 1, "episode": 3},
+        ),
         (
             f"Previously on {SHOW} before season 2 episode 1",
             "get_previously_on",
@@ -62,6 +64,18 @@ def test_parses_supported_phrasings(text, tool, args):
     assert intent.args == args
 
 
-@pytest.mark.parametrize("text", ["", "   ", "hello there", "what's the weather"])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "",
+        "   ",
+        "hello there",
+        "what's the weather",
+        "catch me up",  # no show or position: the server remembers nothing
+        "previously on",
+        f"previously on {SHOW}",  # no position
+        f"recap {SHOW}",  # no range
+    ],
+)
 def test_unrecognised_text_returns_none(text):
     assert parse(text) is None

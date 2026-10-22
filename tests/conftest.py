@@ -1,13 +1,12 @@
 import pytest
 
 from common.models import EpisodeDigest, SeasonDigest, Show, ShowData
-from common.progress import ProgressStore
 from common.store import ShowStore
 
 
 @pytest.fixture
-def stores(tmp_path):
-    """A ShowStore holding one 2-season show ("The Test Show"), plus an empty ProgressStore."""
+def shows(tmp_path):
+    """A ShowStore holding one 2-season show ("The Test Show")."""
     sizes = {1: 3, 2: 3}
     data = ShowData(
         show=Show(id=7, name="The Test Show", season_sizes=sizes),
@@ -21,15 +20,14 @@ def stores(tmp_path):
             for s, size in sizes.items()
         ],
     )
-    shows = ShowStore(tmp_path)
-    shows.save(data)
-    return shows, ProgressStore(tmp_path)
+    store = ShowStore(tmp_path)
+    store.save(data)
+    return store
 
 
 # Settings that change behaviour and could be set in a developer's shell (for the Bedrock
 # pipeline, the demo script, a tunnel...). Tests must not depend on them.
 _ENV_THAT_AFFECTS_BEHAVIOUR = [
-    "IDENTITY_MODE",
     "ALLOWED_HOSTS",
     "DATA_DIR",
     "STORAGE_BACKEND",
@@ -43,7 +41,6 @@ _ENV_THAT_AFFECTS_BEHAVIOUR = [
     "AWS_PROFILE",
     "ON_DEMAND",
     "ON_DEMAND_DAILY_LIMIT",
-    "ON_DEMAND_USER_LIMIT",
 ]
 
 

@@ -1,6 +1,6 @@
-"""Pluggable document storage behind ShowStore, ProgressStore and JobStore.
+"""Pluggable document storage behind ShowStore and JobStore.
 
-Three tiny collections (`shows`, `users`, `jobs`), each a key -> JSON-object map, so one
+Two tiny collections (`shows`, `jobs`), each a key -> JSON-object map, so one
 three-method interface covers every store:
 
     STORAGE_BACKEND=file      (default) JSON files under $DATA_DIR/<collection>/<key>.json
@@ -25,7 +25,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Protocol
 
-COLLECTIONS = ("shows", "users", "jobs")
+COLLECTIONS = ("shows", "jobs")
 
 Doc = dict[str, Any]
 

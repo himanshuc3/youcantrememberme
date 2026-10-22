@@ -24,22 +24,20 @@ flowchart LR
     end
 
     subgraph ONLINE["Online MCP server  (python -m server.main)  [built]"]
-        MAIN[main.py<br/>5 MCP tools] --> TOOLS[tools.py]
+        MAIN[main.py<br/>4 MCP tools] --> TOOLS[tools.py]
         TOOLS --> RES[resolve.py<br/>fuzzy show name]
         TOOLS --> ASM[assemble.py<br/>spoiler-safe recap]
-        MAIN --> IDN[identity.py<br/>guest / header / oauth]
-        TOOLS --> PS[(ProgressStore<br/>data/users/HASH.json)]
     end
 
     SD -- read only --> RES
     SD -- read only --> ASM
 
     ALEXA[Alexa+ <br/> own NLU picks the tool] -- "Streamable HTTP tools/call" --> MAIN
-    WEB[web_demo<br/>rule-based intent parser<br/>real MCP client] -- "Streamable HTTP + X-Demo-User" --> MAIN
+    WEB[web_demo<br/>rule-based intent parser<br/>real MCP client] -- "Streamable HTTP" --> MAIN
 ```
 
 Boundary rule: the pipeline only **writes** `ShowStore`; the server only **reads** it. The server
-never calls an LLM. Per-user progress is the only state the server writes.
+never calls an LLM. The server keeps no per-user state; it only writes on-demand job records.
 
 ## 2. Data model
 
@@ -50,7 +48,6 @@ EpisodeDigest   season, number, digest, title, title_is_spoiler
 SeasonDigest    season, digest, episode_count   (only built when season is complete)
 ShowData        show + [EpisodeDigest] + [SeasonDigest] + attribution   -> one JSON file per show
 Recap           show, text, starts_at, covered_through, truncated, attribution
-Progress        show_id, season, episode, updated_at   -> one JSON file per user
 ```
 
 ## 3. Spoiler-safety rules (server/assemble.py)
@@ -85,21 +82,16 @@ sequenceDiagram
     P->>S: save ShowData JSON
 ```
 
-### 4.2 "I'm on season 2 episode 4 of The Bear" -> save_progress [built]
+### 4.2 "Catch me up on The Bear, I'm on season 2 episode 4" -> catch_me_up [built]
 
-1. Alexa+ NLU picks `save_progress(show, season, episode)`.
-2. `resolve_user_id` -> oauth principal, else `X-Demo-User`, else `guest`.
-3. `resolve_show` normalizes and fuzzy-matches against stored shows.
-4. Unknown show -> "I don't have that yet" (see 4.6). Episode out of range -> spoken error.
-5. `ProgressStore.set` (atomic write). Reply: "Got it. I'll remember you're through ...".
-
-### 4.3 "Catch me up" -> catch_me_up [built]
-
-1. Show named: use that show's saved progress. No show: the most recently updated progress.
-2. No saved progress -> `needs_progress: true`, "Which season and episode did you last watch?".
-3. `assemble_recap(show, (1,1), saved.pos)` -> season digests for complete seasons, episode
-   digests for the partial one, trimmed oldest-first to the word budget.
-4. Returns `text`, `covered_through`, `truncated`, `attribution`.
+1. Alexa+ NLU picks `catch_me_up(show, season, episode)`, filling the arguments from what the
+   user said. The server stores nothing about the user.
+2. `resolve_show` normalizes and fuzzy-matches against stored shows (partial titles and typos).
+3. Unknown show -> "I don't have that yet" (see 4.6). Beyond what is stored -> refresh (4.7).
+   Episode that doesn't exist -> spoken error.
+4. `assemble_recap(show, (1,1), (season, episode))` -> season digests for complete seasons,
+   episode digests for the partial one, trimmed oldest-first to the word budget.
+5. Returns `text`, `covered_through`, `truncated`, `attribution`.
 
 ### 4.4 "Recap X through season 1" -> get_recap [built]
 
@@ -107,8 +99,8 @@ Same assembly with explicit from/to. No `to_episode` means "through the end of t
 
 ### 4.5 "Previously on" -> get_previously_on [built]
 
-Explicit season/episode: the `count` episodes before it. Otherwise: the last `count` episodes
-up to and including saved progress. Only episode digests, never a season digest.
+`get_previously_on(show, season, episode, count=2)`: the `count` episodes immediately before
+that episode, across season boundaries. Only episode digests, never a season digest.
 
 ### 4.6 Show or episode not in the store [built; on-demand needs ON_DEMAND=1]
 
@@ -117,7 +109,7 @@ flowchart TD
     Q[any tool call] --> R{resolve_show hit?}
     R -- no --> V{"ON_DEMAND=1 and TVmaze knows it?"}
     V -- no --> U["text: 'I don't have recaps for that show yet. I can recap: A, B, C.'<br/>found:false"]
-    V -- yes --> D["enqueue job (deduped on TVmaze id, daily + per-user caps)<br/>text: 'I've started getting it ready, ask again in a few minutes'"]
+    V -- yes --> D["enqueue job (deduped on TVmaze id, daily cap)<br/>text: 'I've started getting it ready, ask again in a few minutes'"]
     D -.-> W["pipeline.worker -> ShowStore"]
     R -- yes --> E{episode exists in season_sizes?}
     E -- no --> B["spoken error: 'Season 2 has 10 episodes' [built]"]
@@ -129,7 +121,7 @@ flowchart TD
 ### 4.7 Web demo [built]
 
 Browser -> `POST /api/ask` -> `intent.parse` (regex) -> real MCP `tools/call` with
-`X-Demo-User` -> JSON result -> page shows tool call, result and spoken text.
+JSON result -> page shows tool call, result and spoken text.
 
 ## 5. Planned extensions (not built)
 

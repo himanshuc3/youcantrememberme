@@ -47,8 +47,10 @@ SEASON_ONLY = re.compile(rf"\b(?:season|s)\s*{NUM}\b", re.IGNORECASE)
 TRAILING = re.compile(r"[\s.!?,]+$")
 
 HELP = (
-    "I didn't understand that. Try: \"I'm on season 2 episode 3 of The Lighthouse Keepers\", "
-    '"catch me up", "previously on", or "recap The Lighthouse Keepers through season 1".'
+    "I didn't understand that. Try: \"Catch me up on The Lighthouse Keepers, I'm on season 2 "
+    'episode 3", "previously on The Lighthouse Keepers before season 2 episode 1", or '
+    '"recap The Lighthouse Keepers through season 1". The server remembers nothing between '
+    "messages, so always say the show and where you are."
 )
 
 
@@ -83,37 +85,38 @@ def parse(text: str) -> Intent | None:
             rest = rest[:a] + " " + rest[b:]
         return rest
 
-    # "previously on [show] [before season X episode Y]"
+    # "previously on <show> before season X episode Y": all three are required
     if "previously" in low:
         rest = re.sub(r"(?i)^.*?previously(?: on)?", "", without_positions())
         rest = re.sub(r"(?i)\b(?:before|until|up to|leading up to)\b.*$", "", rest)
-        args: dict[str, Any] = {}
-        if show := _clean_show(rest):
-            args["show"] = show
-        if se:
-            args["season"], args["episode"] = se[-1][0], se[-1][1]
-        return Intent("get_previously_on", args)
+        show = _clean_show(rest)
+        if not show or not se:
+            return None
+        return Intent(
+            "get_previously_on", {"show": show, "season": se[-1][0], "episode": se[-1][1]}
+        )
 
-    # "I'm on season 2 episode 4 of X"  /  "I've watched ... X season 2 episode 4"
-    if se and re.search(
-        r"(?i)\b(?:i'?m|i am|i'?ve|i have|we'?re|we are|just|finished|watched|stopped)\b", t
+    # "catch me up on X, I'm on season 2 episode 4" / "I'm on season 2 episode 4 of X"
+    if se and (
+        re.search(r"(?i)\bcatch(?:ing)?\s+(?:me\s+)?up\b", t)
+        or re.search(
+            r"(?i)\b(?:i'?m|i am|i'?ve|i have|we'?re|we are|just|finished|watched|stopped)\b", t
+        )
     ):
-        a, b = se[0][2]
-        before, after = t[:a], t[b:]
-        show = _clean_show(after)
-        if show is None:
-            show = _clean_show(
-                re.sub(
-                    r"(?i)^.*?\b(?:on|at|through|finished|watched|up to|done with|"
-                    r"caught up (?:to|through)|stopped (?:at|on))\b",
-                    "",
-                    before,
-                )
-            )
-        args = {"season": se[0][0], "episode": se[0][1]}
-        if show:
-            args["show"] = show
-        return Intent("save_progress", args) if show else None
+        rest = without_positions()
+        rest = re.sub(r"(?i)\bcatch(?:ing)?\s+(?:me\s+)?up\b", " ", rest)
+        rest = re.sub(
+            r"(?i)\b(?:i'?m|i am|i'?ve|i have|we'?re|we are|just|finished|watched|stopped|"
+            r"on|at|through|up to|done with|caught up (?:to|through))\b",
+            " ",
+            rest,
+        )
+        rest = re.sub(r"(?i)^\s*(?:i|we)\b", " ", rest)  # "i just finished ..." leaves a bare "i"
+        rest = re.sub(r"\s+", " ", rest)
+        show = _clean_show(rest)
+        if not show:
+            return None
+        return Intent("catch_me_up", {"show": show, "season": se[0][0], "episode": se[0][1]})
 
     # "recap X through season 2 [episode 3] [from season 1 episode 2]"
     if re.search(r"(?i)\b(?:recap|summary|summarize|summarise|what happened)\b", t):
@@ -122,7 +125,7 @@ def parse(text: str) -> Intent | None:
         if end is None:
             only = SEASON_ONLY.search(t)
             if only is None:
-                return Intent("catch_me_up", _show_arg(t))
+                return None
             end = (_n(only.group(1)), None)
         rest = SEASON_ONLY.sub(" ", without_positions())
         rest = re.sub(
@@ -146,17 +149,8 @@ def parse(text: str) -> Intent | None:
             return None
         return Intent("get_recap", args)
 
-    if re.search(r"(?i)\bcatch(?:ing)?\s+(?:me\s+)?up\b", t):
-        m = re.search(r"(?i)\bcatch(?:ing)?\s+(?:me\s+)?up\b(.*)$", t)
-        return Intent("catch_me_up", _show_arg(m.group(1) if m else ""))
-
     if m := re.search(r"(?i)\b(?:do you have|have you got|is|find|looking for)\s+(.+)$", t):
         show = _clean_show(re.sub(r"(?i)\bavailable\b", "", m.group(1)))
         if show:
             return Intent("find_show", {"query": show})
     return None
-
-
-def _show_arg(text: str) -> dict[str, Any]:
-    show = _clean_show(re.sub(r"(?i)\b(?:catch(?:ing)?\s+(?:me\s+)?up|recap)\b", "", text))
-    return {"show": show} if show else {}

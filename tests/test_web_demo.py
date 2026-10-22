@@ -10,21 +10,19 @@ def make_client(fake):
 def test_message_becomes_a_tool_call_and_returns_the_spoken_text():
     seen = []
 
-    async def fake(tool, args, user):
-        seen.append((tool, args, user))
+    async def fake(tool, args):
+        seen.append((tool, args))
         return {"text": "Season 1. A recap.", "covered_through": "season 1, episode 5"}
 
-    out = make_client(fake).post(
-        "/api/ask", json={"text": "Recap The Bear through season 1", "user": "u1"}
-    )
+    out = make_client(fake).post("/api/ask", json={"text": "Recap The Bear through season 1"})
     body = out.json()
-    assert seen == [("get_recap", {"show": "The Bear", "to_season": 1}, "u1")]
+    assert seen == [("get_recap", {"show": "The Bear", "to_season": 1})]
     assert body["spoken"] == "Season 1. A recap."
     assert body["tool"] == "get_recap" and body["understood"]
 
 
 def test_unrecognised_input_gets_help_and_no_tool_call():
-    async def fake(tool, args, user):
+    async def fake(tool, args):
         raise AssertionError("must not be called")
 
     body = make_client(fake).post("/api/ask", json={"text": "blah"}).json()
@@ -32,16 +30,18 @@ def test_unrecognised_input_gets_help_and_no_tool_call():
 
 
 def test_server_down_is_reported_not_a_500():
-    async def fake(tool, args, user):
+    async def fake(tool, args):
         raise ConnectionError("boom")
 
-    resp = make_client(fake).post("/api/ask", json={"text": "catch me up"})
+    resp = make_client(fake).post(
+        "/api/ask", json={"text": "catch me up on The Bear, I'm on season 1 episode 2"}
+    )
     assert resp.status_code == 200
     assert resp.json()["error"] is True
 
 
 def test_index_page_is_served():
-    async def fake(tool, args, user):
+    async def fake(tool, args):
         return {}
 
     resp = make_client(fake).get("/")

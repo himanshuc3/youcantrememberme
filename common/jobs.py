@@ -9,7 +9,6 @@ backend is used. On AWS the next step is DynamoDB conditional writes plus SQS.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 from datetime import UTC, datetime
@@ -31,16 +30,10 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def requester_hash(user_id: str) -> str:
-    """Jobs record who asked only as a hash, for per-user rate limits."""
-    return hashlib.sha256(user_id.encode()).hexdigest()[:16]
-
-
 class Job(BaseModel):
     show_id: int  # TVmaze id
     name: str
     status: Status = "queued"
-    requested_by: str  # requester_hash(...)
     requested_at: str = Field(default_factory=_now)
     updated_at: str = Field(default_factory=_now)
     attempts: int = 0
@@ -67,7 +60,7 @@ class JobStore:
     def all(self) -> list[Job]:
         return [Job.model_validate(doc) for _, doc in self.backend.items(COLLECTION)]
 
-    def enqueue(self, show_id: int, name: str, requested_by: str) -> tuple[Job, bool]:
+    def enqueue(self, show_id: int, name: str) -> tuple[Job, bool]:
         """Queue a show. Returns (job, created). A queued or running job is returned
         untouched. A failed job with attempts left is re-queued, and so is a 'ready' one:
         callers only enqueue after a store miss, so its data must have gone missing."""
@@ -79,7 +72,6 @@ class JobStore:
         job = Job(
             show_id=show_id,
             name=name,
-            requested_by=requested_by,
             attempts=existing.attempts if existing and existing.status == "failed" else 0,
         )
         self._write(job)
@@ -116,11 +108,6 @@ class JobStore:
                 n += 1
         return n
 
-    def created_today(self, requested_by: str | None = None) -> int:
+    def created_today(self) -> int:
         today = datetime.now(UTC).date().isoformat()
-        return sum(
-            1
-            for j in self.all()
-            if j.requested_at.startswith(today)
-            and (requested_by is None or j.requested_by == requested_by)
-        )
+        return sum(1 for j in self.all() if j.requested_at.startswith(today))

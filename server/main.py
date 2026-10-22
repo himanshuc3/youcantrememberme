@@ -1,6 +1,6 @@
 """MCP server entry point (Streamable HTTP, stateless).
 
-Run locally:   python -m server.main            # serves http://127.0.0.1:8000/mcp
+Run locally:   python -m server.main            # http://127.0.0.1:8000/mcp (HOST, PORT override)
 Expose it:     cloudflared tunnel --url http://127.0.0.1:8000
 """
 
@@ -9,13 +9,12 @@ from __future__ import annotations
 import os
 from typing import Literal
 
-from mcp.server.mcpserver import Context, MCPServer  # mcp 2.x (was FastMCP in 1.x)
+import uvicorn  # ASGI (Asynchronous Server Gateway Interface) server
+from mcp.server.mcpserver import MCPServer  # mcp 2.x (was FastMCP in 1.x)
 from mcp.server.transport_security import TransportSecuritySettings
 
-from common.progress import ProgressStore
 from common.store import ShowStore
 from server import tools
-from server.identity import resolve_user_id
 from server.on_demand import OnDemand
 
 LOCAL_HOSTS = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
@@ -41,57 +40,41 @@ def transport_security() -> TransportSecuritySettings:
     )
 
 
-def build_server(
-    store: ShowStore | None = None,
-    progress: ProgressStore | None = None,
-    on_demand: OnDemand | None = None,
-) -> MCPServer:
+def build_server(store: ShowStore | None = None, on_demand: OnDemand | None = None) -> MCPServer:
     store = store or ShowStore()
-    progress = progress or ProgressStore()
     if on_demand is None and os.environ.get("ON_DEMAND") == "1":
         # Unknown shows get queued for `python -m pipeline.worker` (see server/on_demand.py).
         on_demand = OnDemand.from_env(store.root)
     mcp = MCPServer(
         "Catch Me Up",
         instructions=(
-            "Spoiler-safe TV recaps. If the user says how far they got in a show, call "
-            "save_progress so you can remember it. When they later ask to be caught up, call "
-            "catch_me_up. Use get_recap for an explicit season/episode range. Never reveal "
-            "anything past the episode the user has reached."
+            "Spoiler-safe TV recaps. The server remembers nothing about users: always pass "
+            "the show and the season/episode the user says they have reached. Use catch_me_up "
+            "for 'catch me up, I'm on season 2 episode 4', get_previously_on for a short "
+            "'previously on' before the episode they are about to watch, and get_recap for an "
+            "explicit range. Never reveal anything past the episode the user has reached."
         ),
     )
 
-    def user_id(ctx: Context) -> str:
-        return resolve_user_id(ctx.request_context, ctx.headers)
-
     @mcp.tool()
-    def find_show(query: str, ctx: Context) -> dict:
+    def find_show(query: str) -> dict:
         """Check whether a TV show is available and list its seasons and episode counts."""
-        return tools.find_show(store, query, on_demand=on_demand, user_id=user_id(ctx))
-
-    @mcp.tool()
-    def save_progress(show: str, season: int, episode: int, ctx: Context) -> dict:
-        """Remember how far the user has watched a show ("I'm on season 2, episode 4" means
-        they finished season 2 episode 4). Saved across conversations."""
-        return tools.save_progress(
-            store, progress, user_id(ctx), show, season, episode, on_demand=on_demand
-        )
+        return tools.find_show(store, query, on_demand=on_demand)
 
     @mcp.tool()
     def catch_me_up(
-        ctx: Context,
-        show: str | None = None,
+        show: str,
+        season: int,
+        episode: int,
         detail: Literal["brief", "standard"] = "standard",
     ) -> dict:
-        """Spoiler-safe recap from the start through the episode the user last said they
-        watched. Omit show to use the show they most recently talked about. If no progress
-        is saved yet, it asks which episode they reached."""
-        return tools.catch_me_up(store, progress, user_id(ctx), show, detail, on_demand=on_demand)
+        """Spoiler-safe recap of everything from the start of the show through the episode the
+        user last watched ("I'm on season 2, episode 4" means they finished that episode)."""
+        return tools.catch_me_up(store, show, season, episode, detail, on_demand=on_demand)
 
     @mcp.tool()
     def get_recap(
         show: str,
-        ctx: Context,
         to_season: int,
         to_episode: int | None = None,
         from_season: int = 1,
@@ -110,34 +93,20 @@ def build_server(
             from_episode,
             detail,
             on_demand=on_demand,
-            user_id=user_id(ctx),
         )
 
     @mcp.tool()
-    def get_previously_on(
-        ctx: Context,
-        show: str | None = None,
-        season: int | None = None,
-        episode: int | None = None,
-        count: int = 2,
-    ) -> dict:
-        """'Previously on...' recap of the last few episodes. Give season and episode to recap
-        the episodes before that one; omit them to recap the last episodes the user already
-        watched, using their saved progress."""
-        return tools.get_previously_on(
-            store, progress, user_id(ctx), show, season, episode, count, on_demand=on_demand
-        )
+    def get_previously_on(show: str, season: int, episode: int, count: int = 2) -> dict:
+        """'Previously on...' recap of the last few episodes (default 2) before the given
+        season and episode, which is the one the user is about to watch."""
+        return tools.get_previously_on(store, show, season, episode, count, on_demand=on_demand)
 
     return mcp
 
 
-def build_app(
-    store: ShowStore | None = None,
-    progress: ProgressStore | None = None,
-    on_demand: OnDemand | None = None,
-):
+def build_app(store: ShowStore | None = None, on_demand: OnDemand | None = None):
     """ASGI app. Stateless + JSON responses suit Lambda and Alexa+'s request/response use."""
-    return build_server(store, progress, on_demand).streamable_http_app(
+    return build_server(store, on_demand).streamable_http_app(
         stateless_http=True, json_response=True, transport_security=transport_security()
     )
 
@@ -145,6 +114,6 @@ def build_app(
 app = build_app()
 
 if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("PORT", "8000")))
+    uvicorn.run(
+        app, host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", "8000"))
+    )

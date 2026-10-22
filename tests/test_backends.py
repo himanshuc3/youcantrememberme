@@ -9,7 +9,6 @@ from common.backend import DynamoBackend, FileBackend, make_backend
 from common.jobs import JobStore
 from common.migrate import migrate
 from common.models import EpisodeDigest, SeasonDigest, Show, ShowData
-from common.progress import Progress, ProgressStore
 from common.store import ShowStore
 
 moto = pytest.importorskip("moto")
@@ -56,37 +55,26 @@ def test_show_store(backend, tmp_path):
     assert [d.show.id for d in shows.all()] == [7]
 
 
-def test_progress_store(backend, tmp_path):
-    ps = ProgressStore(tmp_path, backend=backend)
-    ps.set("alexa-user-1", Progress(show_id=7, season=2, episode=1))
-    assert ProgressStore(tmp_path, backend=backend).get("alexa-user-1", 7).pos == (2, 1)
-    assert ps.get("someone-else", 7) is None
-    # the raw user id is never stored as a key
-    assert all("alexa-user-1" not in key for key, _ in backend.items("users"))
-
-
 def test_job_store_lifecycle(backend, tmp_path):
     jobs = JobStore(tmp_path, backend=backend)
-    job, created = jobs.enqueue(7, "The Test Show", "me")
+    job, created = jobs.enqueue(7, "The Test Show")
     assert created and job.status == "queued"
-    assert jobs.enqueue(7, "The Test Show", "me")[1] is False  # deduped
+    assert jobs.enqueue(7, "The Test Show")[1] is False  # deduped
     claimed = jobs.claim_next()
     assert claimed.status == "running" and claimed.attempts == 1
     jobs.mark_ready(claimed)
     assert jobs.get(7).status == "ready"
-    assert jobs.created_today("me") == 1
+    assert jobs.created_today() == 1
 
 
 def test_migrate_file_to_other_backend(backend, tmp_path):
     src = FileBackend(tmp_path / "src")
     ShowStore(backend=src, root=tmp_path / "src").save(_show())
-    ProgressStore(backend=src, root=tmp_path / "src").set(
-        "u", Progress(show_id=7, season=1, episode=1)
-    )
+    JobStore(backend=src, root=tmp_path / "src").enqueue(7, "The Test Show")
     counts = migrate(src, backend)
-    assert counts == {"shows": 1, "users": 1, "jobs": 0}
+    assert counts == {"shows": 1, "jobs": 1}
     assert ShowStore(tmp_path, backend=backend).get(7) == _show()
-    assert ProgressStore(tmp_path, backend=backend).get("u", 7).pos == (1, 1)
+    assert JobStore(tmp_path, backend=backend).get(7).name == "The Test Show"
 
 
 def test_make_backend_selection(monkeypatch, tmp_path):

@@ -71,27 +71,17 @@
 <form id="form">
   <div class="bar">
     <input type="text" id="text" autocomplete="off" aria-label="Say something to Catch Me Up"
-           placeholder="Try: I'm on season 1 episode 3 of The Lighthouse Keepers">
+           placeholder="Try: Catch me up on The Lighthouse Keepers, I'm on season 1 episode 3">
     <button type="submit">Send</button>
   </div>
 </form>
 <script>
   const EXAMPLES = [
     "Do you have The Lighthouse Keepers?",
-    "I'm on season 1 episode 3 of The Lighthouse Keepers",
-    "Catch me up",
+    "Catch me up on The Lighthouse Keepers, I'm on season 1 episode 3",
+    "Previously on The Lighthouse Keepers before season 2 episode 1",
     "Recap The Lighthouse Keepers through season 1",
-    "Previously on",
-    "I'm on season 2 episode 2 of The Lighthouse Keepers",
   ];
-  // One id per browser, so remembered progress is per person (sent as X-Demo-User by the server).
-  let user = "web-demo";
-  try {
-    user = localStorage.getItem("cmu-user") ||
-      (localStorage.setItem("cmu-user", "b-" + Math.random().toString(36).slice(2, 10)),
-       localStorage.getItem("cmu-user"));
-  } catch (_) { /* storage blocked: fall back to a shared id */ }
-
   const log = document.getElementById("log");
   const input = document.getElementById("text");
 
@@ -112,10 +102,8 @@
     const badges = el("div", "badges");
     if (data.tool) badges.appendChild(badge("tool: " + data.tool));
     if (r.covered_through) badges.appendChild(badge("covered through " + r.covered_through, "ok"));
-    if (r.remembered_progress) badges.appendChild(badge("used remembered progress", "ok"));
-    if (r.saved) badges.appendChild(badge("progress saved", "ok"));
     if (r.truncated) badges.appendChild(badge("older events trimmed for length", "warn"));
-    if (r.needs_progress) badges.appendChild(badge("needs your progress", "warn"));
+    if (r.pending) badges.appendChild(badge("fetching in the background", "warn"));
     if (data.error) badges.appendChild(badge("server unreachable", "warn"));
     if (badges.children.length) box.appendChild(badges);
 
@@ -148,7 +136,7 @@
     try {
       const res = await fetch("/api/ask", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, user }),
+        body: JSON.stringify({ text }),
       });
       addBot(await res.json());
     } catch (e) {

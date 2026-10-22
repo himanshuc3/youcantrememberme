@@ -12,10 +12,10 @@ someone asks for a point beyond what is stored, the show is re-queued so the wor
 it from TVmaze. A per-show cooldown (REFRESH_COOLDOWN_HOURS, default 24) stops repeated
 requests for an episode that really doesn't exist from hammering TVmaze.
 
-Cost guards: a global and a per-user cap on newly created jobs per UTC day.
+Cost guard: a cap on newly created jobs per UTC day.
 
 Off unless `ON_DEMAND=1` (see server/main.py), so tests and offline demos never touch the
-network. Settings: ON_DEMAND_DAILY_LIMIT (default 20), ON_DEMAND_USER_LIMIT (default 3).
+network. Setting: ON_DEMAND_DAILY_LIMIT (default 20).
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
-from common.jobs import Job, JobStore, requester_hash
+from common.jobs import Job, JobStore
 
 Lookup = Callable[[str], "tuple[int, str] | None"]
 
@@ -59,13 +59,11 @@ class OnDemand:
         jobs: JobStore,
         lookup: Lookup,
         daily_limit: int = 20,
-        user_limit: int = 3,
         refresh_cooldown: timedelta = timedelta(hours=24),
     ):
         self.jobs = jobs
         self.lookup = lookup
         self.daily_limit = daily_limit
-        self.user_limit = user_limit
         self.refresh_cooldown = refresh_cooldown
 
     @classmethod
@@ -78,7 +76,6 @@ class OnDemand:
             JobStore(root),
             lookup,
             daily_limit=int(os.environ.get("ON_DEMAND_DAILY_LIMIT", "20")),
-            user_limit=int(os.environ.get("ON_DEMAND_USER_LIMIT", "3")),
             refresh_cooldown=timedelta(hours=float(os.environ.get("REFRESH_COOLDOWN_HOURS", "24"))),
         )
 
@@ -97,7 +94,7 @@ class OnDemand:
             )
         return _pending(job, created=False)
 
-    def request(self, user_id: str, query: str) -> Request:
+    def request(self, query: str) -> Request:
         """Called when `query` matched no stored show."""
         try:
             found = self.lookup(query)
@@ -111,11 +108,7 @@ class OnDemand:
         if existing is not None:
             return existing
 
-        who = requester_hash(user_id)
-        if (
-            self.jobs.created_today() >= self.daily_limit
-            or self.jobs.created_today(who) >= self.user_limit
-        ):
+        if self.jobs.created_today() >= self.daily_limit:
             return Request(
                 "unavailable",
                 f"I don't have {name} yet, and I can't add new shows right now. "
@@ -123,10 +116,10 @@ class OnDemand:
                 show_id,
                 name,
             )
-        job, created = self.jobs.enqueue(show_id, name, who)
+        job, created = self.jobs.enqueue(show_id, name)
         return _pending(job, created)
 
-    def refresh(self, user_id: str, show_id: int, name: str) -> Request | None:
+    def refresh(self, show_id: int, name: str) -> Request | None:
         """Called when a stored show doesn't reach the requested episode. Queues a re-fetch and
         returns the "fetching" reply, or None when a refresh wouldn't help right now (done
         recently, gave up, or over the daily caps): the caller then says the episode isn't there."""
@@ -137,13 +130,9 @@ class OnDemand:
             age = datetime.now(UTC) - datetime.fromisoformat(job.updated_at)
             if job.exhausted or age < self.refresh_cooldown:
                 return None
-        who = requester_hash(user_id)
-        if (
-            self.jobs.created_today() >= self.daily_limit
-            or self.jobs.created_today(who) >= self.user_limit
-        ):
+        if self.jobs.created_today() >= self.daily_limit:
             return None
-        job, _ = self.jobs.enqueue(show_id, name, who)
+        job, _ = self.jobs.enqueue(show_id, name)
         return Request(
             "pending",
             f"I don't have that far in {name} yet. I've started fetching the latest episodes, "

@@ -21,9 +21,8 @@ ask, the server only looks up and stitches together summaries it already has.
    one digest per episode, seeing ONLY that               │
    episode + earlier digests                              ▼
            │                                         server/  (this repo, no LLM here)
-           ▼                                          ├─ identity   who is asking?
-   pipeline/season  one digest per finished season    ├─ progress   where did they get to?
-           │                                          └─ assemble   stitch digests, never
+           ▼                                          ├─ resolve    fuzzy show name
+   pipeline/season  one digest per finished season    └─ assemble   stitch digests, never
            ▼                                                         past that episode
    data/shows/<id>.json  ───────────────────────────────►  reads digests
                                                               │
@@ -40,11 +39,10 @@ offline.
 | You say | Alexa+ calls | What the server does |
 |---|---|---|
 | "Do you have Severance?" | `find_show(query)` | fuzzy-matches the name, lists seasons and episode counts |
-| "I'm on season 1 episode 3 of Severance" | `save_progress(show, 1, 3)` | checks that episode exists, stores *"through S1E3"* for this user |
-| *(weeks later, new conversation)* "Catch me up" | `catch_me_up()` | finds the show you last mentioned and your saved point, returns the recap of S1E1 to S1E3 |
-| "Previously on" | `get_previously_on()` | recaps the last two episodes you already watched |
-| "Recap Severance through season 1" | `get_recap(show, to_season=1)` | no memory needed: recaps exactly the range asked for |
-| "Catch me up" (nothing saved) | `catch_me_up()` | asks "Which season and episode did you last watch?" instead of guessing |
+| "Catch me up on Severance, I'm on season 1 episode 3" | `catch_me_up(show, 1, 3)` | recaps S1E1 to S1E3, nothing later |
+| "Previously on, I'm about to watch season 2 episode 1" | `get_previously_on(show, 2, 1)` | recaps the last two episodes before it, across the season boundary |
+| "Recap Severance through season 1" | `get_recap(show, to_season=1)` | recaps exactly the range asked for |
+| "Catch me up on Severance" (no position said) | *(none)* | Alexa+ asks where you got to, since the server remembers nothing |
 
 The reply is a small object; `text` is what Alexa+ speaks. It also carries `covered_through`
 (the last episode actually included) so Alexa+ can say "through season 1, episode 3".
@@ -64,15 +62,15 @@ And at generation time (`pipeline/digest.py`): each episode summary is written f
 episode's text plus the summaries of the 3 episodes before it, never anything later, and the
 model is told to use nothing from its own memory of the show.
 
-## Who is "you"? (`server/identity.py`)
-Alexa+ sends no user id. Remembered progress needs one, which only account linking provides.
-Today: everyone shares a "guest" profile; the web demo gives each browser its own profile
-via a header (demo only). Details and the next step: [identity-and-account-linking.md](identity-and-account-linking.md).
+## Who is "you"?
+Nobody: the server is stateless and keeps no user data, so there is no identity or account
+linking. Each call carries the show and the episode reached, supplied by Alexa+ from what the
+user said.
 
 ## Where the pieces live
 | Folder | Role |
 |---|---|
-| `server/` | the MCP server Alexa+ calls (tools, identity, assembly) |
+| `server/` | the MCP server Alexa+ calls (tools, assembly) |
 | `common/` | data models and storage shared by pipeline and server |
 | `pipeline/` | offline: fetch, summarize with Bedrock, write `data/` |
 | `web_demo/` | stand-in for Alexa+: a chat page + a rule-based sentence parser |
@@ -81,8 +79,8 @@ via a header (demo only). Details and the next step: [identity-and-account-linki
 | `addon-package/` | the Alexa+ store listing (draft) |
 
 ## What is real and what isn't (honest status)
-- **Real and tested:** the MCP server over Streamable HTTP, all five tools, spoiler-safe
-  assembly, remembered progress, the web demo.
+- **Real and tested:** the MCP server over Streamable HTTP, all four tools, spoiler-safe
+  assembly, the web demo.
 - **Written, never run live:** the Bedrock summarizer (fake-model tests only).
-- **Not built:** account linking, hosting on AWS, the Alexa+ add-on registration, the
+- **Not built:** hosting on AWS, the Alexa+ add-on registration, the
   Wikipedia source, the leak eval, a visual card.

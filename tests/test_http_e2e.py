@@ -1,5 +1,5 @@
-"""End to end over real HTTP: JSON-RPC `tools/call` against the Streamable HTTP app, with
-the demo-identity header, exactly as a remote client (Alexa+ or the web demo) would send it."""
+"""End to end over real HTTP: JSON-RPC `tools/call` against the Streamable HTTP app, exactly as
+a remote client (Alexa+ or the web demo) would send it."""
 
 import json
 
@@ -12,18 +12,14 @@ HEADERS = {"Content-Type": "application/json", "Accept": "application/json, text
 
 
 @pytest.fixture
-def client(stores, monkeypatch):
-    monkeypatch.setenv("IDENTITY_MODE", "header")
+def client(shows, monkeypatch):
     monkeypatch.setenv("ALLOWED_HOSTS", "testserver")
-    shows, progress = stores
-    with TestClient(build_app(shows, progress)) as c:
+    with TestClient(build_app(shows)) as c:
         yield c
 
 
-def rpc(client, method, params=None, user=None, id_=1):
+def rpc(client, method, params=None, id_=1):
     headers = dict(HEADERS)
-    if user:
-        headers["X-Demo-User"] = user
     body = {"jsonrpc": "2.0", "id": id_, "method": method}
     if params is not None:
         body["params"] = params
@@ -32,8 +28,8 @@ def rpc(client, method, params=None, user=None, id_=1):
     return resp.json()
 
 
-def call(client, tool, args, user=None):
-    out = rpc(client, "tools/call", {"name": tool, "arguments": args}, user)
+def call(client, tool, args):
+    out = rpc(client, "tools/call", {"name": tool, "arguments": args})
     assert "error" not in out, out
     assert not out["result"].get("isError"), out
     return json.loads(out["result"]["content"][0]["text"])
@@ -56,7 +52,6 @@ def test_lists_all_tools(client):
     names = {t["name"] for t in rpc(client, "tools/list")["result"]["tools"]}
     assert names == {
         "find_show",
-        "save_progress",
         "catch_me_up",
         "get_recap",
         "get_previously_on",
@@ -75,39 +70,47 @@ def test_get_recap_over_http(client):
     assert "S1E3" not in out["text"]
 
 
-def test_progress_persists_across_requests_and_is_per_user(client):
-    call(
-        client,
-        "save_progress",
-        {"show": "The Test Show", "season": 1, "episode": 2},
-        user="alice",
+def test_catch_me_up_is_stateless_and_uses_the_given_position(client):
+    first = call(client, "catch_me_up", {"show": "The Test Show", "season": 1, "episode": 2})
+    assert first["covered_through"] == "season 1, episode 2"
+    assert "S1E3" not in first["text"]
+    later = call(client, "catch_me_up", {"show": "The Test Show", "season": 2, "episode": 1})
+    assert later["covered_through"] == "season 2, episode 1"
+
+
+def test_get_previously_on_needs_a_position_and_crosses_seasons(client):
+    out = call(client, "get_previously_on", {"show": "The Test Show", "season": 2, "episode": 1})
+    assert "S1E3 happens." in out["text"] and "S1E2 happens." in out["text"]
+    assert "S2E1" not in out["text"]
+    bad = rpc(
+        client, "tools/call", {"name": "get_previously_on", "arguments": {"show": "The Test Show"}}
     )
-    alice = call(client, "catch_me_up", {}, user="alice")
-    assert alice["covered_through"] == "season 1, episode 2"
-
-    bob = call(client, "catch_me_up", {"show": "The Test Show"}, user="bob")
-    assert bob["needs_progress"]
+    assert bad["result"]["isError"]  # season and episode are required
 
 
-def test_unlisted_host_is_rejected_unless_allowed(stores, monkeypatch):
+def test_out_of_range_position_gets_a_spoken_error(client):
+    out = call(client, "catch_me_up", {"show": "The Test Show", "season": 1, "episode": 9})
+    assert out["text"] == "Season 1 of The Test Show has 3 episodes."
+
+
+def test_unlisted_host_is_rejected_unless_allowed(shows, monkeypatch):
     """Without this, the server would answer 421 behind any tunnel or cloud URL."""
-    shows, progress = stores
     monkeypatch.delenv("ALLOWED_HOSTS", raising=False)
-    with TestClient(build_app(shows, progress)) as c:
+    with TestClient(build_app(shows)) as c:
         resp = c.post(
             "/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, headers=HEADERS
         )
         assert resp.status_code == 421
 
     monkeypatch.setenv("ALLOWED_HOSTS", "testserver")
-    with TestClient(build_app(shows, progress)) as c:
+    with TestClient(build_app(shows)) as c:
         resp = c.post(
             "/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, headers=HEADERS
         )
         assert resp.status_code == 200
 
     monkeypatch.setenv("ALLOWED_HOSTS", "*")
-    with TestClient(build_app(shows, progress)) as c:
+    with TestClient(build_app(shows)) as c:
         resp = c.post(
             "/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, headers=HEADERS
         )

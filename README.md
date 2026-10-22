@@ -11,7 +11,7 @@ Summaries are computed **offline**; the server only looks them up, so answers ar
 
 ```
 pipeline/  TVmaze (+Wikipedia) -> per-episode digests -> per-season digests -> data/shows/*.json
-server/    MCP server (Streamable HTTP): find_show, save_progress, catch_me_up, get_recap, get_previously_on
+server/    MCP server (Streamable HTTP): find_show, catch_me_up, get_recap, get_previously_on
 common/     shared models + storage
 evals/     spoiler-leak and speakability checks
 addon-package/  Alexa add-on listing (addon.json, images, privacy/terms)
@@ -47,6 +47,8 @@ being fetched, the worker pulls it from TVmaze into DynamoDB (seconds in the def
 `baseline` mode), and asking again returns the recap. `task dev WORKER_MODE=llm` builds
 recaps with Claude on Bedrock instead (needs AWS credentials). `task db:down` / `task db:reset`
 stop or wipe the local database.
+Configuration: copy [`.env.example`](.env.example) to `.env` (git-ignored; `task` loads it) to
+change host/port, limits, Bedrock model, AWS profile. Every variable is documented there.
 `task` lists every task. Without Task/uv: `python3 -m venv .venv && . .venv/bin/activate &&
 pip install -e ".[dev]" && pytest && scripts/run_demo.sh`.
 Full instructions, a scripted walkthrough, real shows, Bedrock, tunnels:
@@ -60,22 +62,22 @@ Docs: [Bedrock setup](docs/bedrock.md) · [alexa-ai CLI on Pop!_OS](docs/setup-a
 | Tool | Use |
 |---|---|
 | `find_show` | is a show available, and how many seasons/episodes |
-| `save_progress` | remember "I'm through season 2, episode 4" across conversations |
-| `catch_me_up` | recap from the start through the remembered episode (no arguments needed) |
+| `catch_me_up` | recap from the start through the episode the user last watched (show, season, episode) |
 | `get_recap` | recap between two explicit points |
-| `get_previously_on` | recap of the last few episodes (explicit, or from remembered progress) |
+| `get_previously_on` | "previously on": the last few episodes before the one they're about to watch |
 
-Who is "the user" is decided in [`server/identity.py`](server/identity.py) (guest / demo header /
-OAuth account linking). See [docs/identity-and-account-linking.md](docs/identity-and-account-linking.md).
+The server is **stateless and profile-agnostic**: it stores nothing about users, so there is no
+login, account linking or per-user data. The caller (Alexa+) passes the show and the episode the
+user says they have reached on every call.
 
 ## Storage backends
-Digests, per-user progress and the on-demand job queue go through one interface
+Digests and the on-demand job queue go through one interface
 ([`common/backend.py`](common/backend.py)). Pick it with `STORAGE_BACKEND`:
 
 | Value | Where | Use |
 |---|---|---|
 | `file` (default) | JSON files under `$DATA_DIR` | tests, offline demo |
-| `dynamodb` | tables `<prefix>shows`, `<prefix>users`, `<prefix>jobs` (`DYNAMODB_TABLE_PREFIX`, `AWS_REGION`, `DYNAMODB_ENDPOINT_URL`) | DynamoDB Local in development, AWS in production |
+| `dynamodb` | tables `<prefix>shows`, `<prefix>jobs` (`DYNAMODB_TABLE_PREFIX`, `AWS_REGION`, `DYNAMODB_ENDPOINT_URL`) | DynamoDB Local in development, AWS in production |
 
 ```bash
 task db:up                       # DynamoDB Local + tables + demo data (scripts/dynamo_local.sh)
@@ -92,7 +94,7 @@ The raw-text and LLM caches stay on local disk under `$DATA_DIR/cache` in every 
 
 ## Shows we don't have yet (on demand)
 With `ON_DEMAND=1` the server answers an unknown show honestly, checks the name against TVmaze,
-and queues it (one job per show, daily and per-user caps). A worker fills the store:
+and queues it (one job per show, a daily cap). A worker fills the store:
 ```bash
 ON_DEMAND=1 python -m server.main            # enqueues misses
 python -m pipeline.worker                    # --mode llm for Bedrock digests, --once to drain

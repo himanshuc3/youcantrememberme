@@ -5,6 +5,9 @@
 
 version: '3'
 
+# Optional `.env` (copy .env.example). Real shell variables and the env set on tasks below win over it.
+dotenv: ['.env']
+
 vars:
   RUN: uv run --extra dev --extra dynamodb
   MCP_PORT: 8000
@@ -15,8 +18,6 @@ vars:
   # MCP Inspector (https://github.com/modelcontextprotocol/inspector), pinned; needs Node.
   INSPECTOR: npx -y @modelcontextprotocol/inspector@2.11.0
   MCP_URL: http://127.0.0.1:{{.MCP_PORT}}/mcp
-  # Identity sent to the server (IDENTITY_MODE=header): each name has its own saved progress.
-  INSPECT_USER: inspector
 
 tasks:
   default:
@@ -65,12 +66,17 @@ tasks:
     desc: Run the MCP server on :{{.MCP_PORT}} (DATA_DIR defaults to the demo data)
     env:
       DATA_DIR: '{{.DEMO_DATA}}'
-      IDENTITY_MODE: header
+      STORAGE_BACKEND: file   # offline demo data, whatever .env says
+      ON_DEMAND: '0'
+      PORT: '{{.MCP_PORT}}'
     cmds:
       - '{{.RUN}} python -m server.main'
 
   demo:
     desc: Demo only - MCP server + chat web UI (:{{.WEB_PORT}}) on the offline demo data
+    env:
+      STORAGE_BACKEND: file
+      ON_DEMAND: '0'
     cmds:
       - '{{.RUN}} scripts/run_demo.sh'
 
@@ -102,38 +108,31 @@ tasks:
     cmds:
       - >-
         {{.INSPECTOR}} --web --transport http --server-url {{.MCP_URL}}
-        --header "X-Demo-User: {{.INSPECT_USER}}"
 
   inspect:list:
     desc: List the server's tools via the Inspector CLI (no browser)
     cmds:
       - >-
         {{.INSPECTOR}} --cli --transport http --server-url {{.MCP_URL}}
-        --header "X-Demo-User: {{.INSPECT_USER}}" --method tools/list
+        --method tools/list
 
   inspect:call:
     desc: 'Call one tool. Usage: task inspect:call -- find_show query="The Lighthouse Keepers"'
     env:
       INSPECTOR: '{{.INSPECTOR}}'
       MCP_URL: '{{.MCP_URL}}'
-      INSPECT_USER: '{{.INSPECT_USER}}'
     cmds:
       - scripts/mcp_call.sh {{.CLI_ARGS}}
 
   inspect:smoke:
     desc: Scripted walkthrough of every tool on the demo data (needs `task server` running)
-    vars:
-      INSPECT_USER: smoke-{{now | unixEpoch}}   # fresh user, so no leftover progress
     env:
       INSPECTOR: '{{.INSPECTOR}}'
       MCP_URL: '{{.MCP_URL}}'
-      INSPECT_USER: '{{.INSPECT_USER}}'
     cmds:
       - scripts/mcp_call.sh find_show query="The Lighthouse Keepers"
-      - scripts/mcp_call.sh catch_me_up
-      - scripts/mcp_call.sh save_progress show="The Lighthouse Keepers" season=1 episode=3
-      - scripts/mcp_call.sh catch_me_up
-      - scripts/mcp_call.sh get_previously_on
+      - scripts/mcp_call.sh catch_me_up show="The Lighthouse Keepers" season=1 episode=3
+      - scripts/mcp_call.sh get_previously_on show="The Lighthouse Keepers" season=1 episode=3
       - scripts/mcp_call.sh get_recap show="The Lighthouse Keepers" to_season=1 to_episode=3
 
   mcp:list:
@@ -181,8 +180,8 @@ tasks:
       AWS_REGION: us-east-1
       AWS_ACCESS_KEY_ID: local
       AWS_SECRET_ACCESS_KEY: local
-      IDENTITY_MODE: header
       ON_DEMAND: '1'
+      PORT: '{{.MCP_PORT}}'
       DATA_DIR: data   # only the pipeline's download/LLM caches live here with DynamoDB
     cmds:
       - '{{.RUN}} {{.SERVER_CMD}}'

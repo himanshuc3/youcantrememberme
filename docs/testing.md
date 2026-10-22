@@ -28,9 +28,8 @@ What they cover:
 |---|---|
 | `test_assemble.py` | spoiler-safe assembly: nothing past the requested episode, season digests only for fully covered seasons, oldest events dropped first |
 | `test_demo_data.py` | a recap "through S1E3" never mentions the S1E5 twist; through the end of season 1 it does |
-| `test_progress.py` | remembered progress persists, is per user, rejects non-existent episodes |
 | `test_digest_llm.py` | the LLM prompt for an episode contains only that episode + earlier digests (fake model, no AWS) |
-| `test_http_e2e.py` | real Streamable HTTP: protocol `2025-11-25`, tool list/descriptions, calls, per-user progress, Host-header protection |
+| `test_http_e2e.py` | real Streamable HTTP: protocol `2025-11-25`, tool list/descriptions, calls (stateless, required position arguments), Host-header protection |
 | `test_intent.py`, `test_web_demo.py` | the web demo's sentence parser and API |
 
 ## 2. The web demo (for demos only; use the Inspector in section 3 for testing)
@@ -41,23 +40,21 @@ Open <http://127.0.0.1:8080>. It starts the MCP server on `:8000` and the demo p
 `:8080`. Press Ctrl+C to stop both. Click the example chips or type, in this order:
 
 1. `Do you have The Lighthouse Keepers?` → lists seasons and episode counts.
-2. `Catch me up` → it asks where you got to (nothing is remembered yet).
-3. `I'm on season 1 episode 3 of The Lighthouse Keepers` → saved.
-4. `Catch me up` → recap of episodes 1–3 only. **Check it never mentions the father.**
-5. `Previously on` → the last two episodes you watched.
-6. `Recap The Lighthouse Keepers through season 1` → full season 1 recap. **Now it does
+2. `Catch me up on The Lighthouse Keepers, I'm on season 1 episode 3` → recap of episodes 1–3
+   only. **Check it never mentions the father.**
+3. `Previously on The Lighthouse Keepers before season 1 episode 3` → the two episodes before it.
+4. `Recap The Lighthouse Keepers through season 1` → full season 1 recap. **Now it does
    mention the father**, because you asked for the whole season. That contrast is the
    spoiler-safety guarantee.
-7. Click "MCP call and result" under any answer to see the exact `tools/call` and reply.
-8. Open the page in a private window (a different "person"): `Catch me up on The Lighthouse Keepers`
-   asks where you got to. Each browser has its own remembered progress.
+5. Click "MCP call and result" under any answer to see the exact `tools/call` and reply.
+6. The server remembers nothing between messages: every request has to name the show and the
+   episode, exactly as Alexa+ will pass them.
 
 The page's language understanding is a small rule-based parser (`web_demo/intent.py`). It
 understands the phrasings above, not free speech. On a real device Alexa+ does that part.
 
 ## 3. Test the MCP server directly (what Alexa+ talks to)
-Start only the server: `python -m server.main` (port 8000; `IDENTITY_MODE=header` if you want
-per-user profiles via the `X-Demo-User` header).
+Start only the server: `python -m server.main` (port 8000).
 
 With curl:
 ```bash
@@ -78,10 +75,9 @@ task inspect:list    # tools/list from the terminal
 task inspect:call -- find_show query="The Lighthouse Keepers"
 task inspect:smoke   # scripted walkthrough of every tool, as a fresh user
 ```
-The Inspector is pinned (`INSPECTOR` in the Taskfile) and sends `X-Demo-User: inspector`, so
-saved progress belongs to that user. Change it with `task inspect INSPECT_USER=alice`, or
-edit the header in the UI, to test per-user behaviour. Without Task:
-`npx @modelcontextprotocol/inspector@2.11.0 --web --transport http --server-url http://127.0.0.1:8000/mcp --header "X-Demo-User: inspector"`.
+The Inspector is pinned (`INSPECTOR` in the Taskfile). The tools are stateless, so fill in
+show, season and episode on every call. Without Task:
+`npx @modelcontextprotocol/inspector@2.11.0 --web --transport http --server-url http://127.0.0.1:8000/mcp`.
 
 ## 4. Real shows (needs internet, no keys)
 ```bash
@@ -123,4 +119,3 @@ Follow [setup-alexa-ai-cli-popos.md](setup-alexa-ai-cli-popos.md), then
 | `421 Invalid Host header` | set `ALLOWED_HOSTS` to the hostname you are using |
 | Web demo says "couldn't reach the MCP server" | the server isn't running on `MCP_URL` (default `http://127.0.0.1:8000/mcp`) |
 | "I don't have recaps for that show yet" | that show isn't in `DATA_DIR`; run the pipeline or use the demo data |
-| Progress forgotten after restart (demo) | different `DATA_DIR` or browser; progress lives in `<DATA_DIR>/users/` |

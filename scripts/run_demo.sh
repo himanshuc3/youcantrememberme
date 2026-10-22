@@ -6,7 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 export DATA_DIR="${DATA_DIR:-examples/demo-data}"
-export IDENTITY_MODE=header          # demo only: one remembered profile per browser
+export PORT="${MCP_PORT:-8000}"          # what server.main listens on
 export MCP_URL="http://127.0.0.1:${MCP_PORT:-8000}/mcp"
 
 python -m server.main &

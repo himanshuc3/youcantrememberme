@@ -31,12 +31,12 @@ from web_demo.intent import HELP, parse
 MCP_URL = os.environ.get("MCP_URL", "http://127.0.0.1:8000/mcp")
 STATIC = Path(__file__).parent / "static"
 
-# (tool name, arguments, demo user id) -> the tool's result dict
-ToolCaller = Callable[[str, dict[str, Any], str], Awaitable[dict[str, Any]]]
+# (tool name, arguments) -> the tool's result dict
+ToolCaller = Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]
 
 
-async def call_mcp_tool(tool: str, args: dict[str, Any], user: str) -> dict[str, Any]:
-    http = httpx2.AsyncClient(headers={"X-Demo-User": user}, timeout=30)
+async def call_mcp_tool(tool: str, args: dict[str, Any]) -> dict[str, Any]:
+    http = httpx2.AsyncClient(timeout=30)
     async with http, Client(streamable_http_client(MCP_URL, http_client=http)) as client:
         result = await client.call_tool(tool, args)
     text = next((b.text for b in result.content if b.type == "text"), "{}")
@@ -45,7 +45,6 @@ async def call_mcp_tool(tool: str, args: dict[str, Any], user: str) -> dict[str,
 
 class Ask(BaseModel):
     text: str
-    user: str = "web-demo"
 
 
 def create_app(call_tool: ToolCaller = call_mcp_tool) -> FastAPI:
@@ -61,7 +60,7 @@ def create_app(call_tool: ToolCaller = call_mcp_tool) -> FastAPI:
         if intent is None:
             return {"understood": False, "spoken": HELP}
         try:
-            result = await call_tool(intent.tool, intent.args, body.user)
+            result = await call_tool(intent.tool, intent.args)
         except Exception as exc:  # noqa: BLE001  (any transport failure: show it, don't 500)
             return {
                 "understood": True,

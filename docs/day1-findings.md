@@ -31,4 +31,4 @@
 1. Bedrock credentials and model access, to run the first real `--mode llm` pipeline.
 2. Run `alexa-ai configure` on your machine (browser login) and confirm the add-on category question.
 3. Decide: build real account linking (multi-user "remembers you" on a device) or keep the
-   one-user demo. See docs/identity-and-account-linking.md.
+   one-user demo. (Superseded: the server is now stateless and stores no per-user data.)
